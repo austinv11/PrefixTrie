@@ -1,3 +1,3 @@
+from ._impl import cPrefixTrie
 
-if __name__ == '__main__':
-    pass
+__all__ = ["cPrefixTrie"]

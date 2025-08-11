@@ -4,3 +4,28 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.10"
 dependencies = []
+
+[build-system]
+requires = ["setuptools>=80", "wheel", "cython"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++"}]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[dependency-groups]
+dev = [
+    "cython",
+]
+test = [
+    "pytest>=8.4.1",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test*.py", "*test.py"]
+addopts = ["-ra", "--strict-config", "--strict-markers", "--maxfail=1"]
