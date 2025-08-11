@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/debug_test.py">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/debug_test.py" />
+              <option name="originalContent" value="&#10;" />
+              <option name="updatedContent" value="import pyximport&#10;pyximport.install()&#10;from prefixtrie._impl import cPrefixTrie&#10;&#10;# Test fuzzy matching behavior&#10;trie = cPrefixTrie(['hello'], allow_indels=True)&#10;&#10;print(&quot;Testing 'heello' with correction_budget=1:&quot;)&#10;result = trie.search('heello', correction_budget=1)&#10;print(f&quot;Result: {result}&quot;)&#10;&#10;print(&quot;\nTesting 'hllo' with correction_budget=1:&quot;)&#10;result = trie.search('hllo', correction_budget=1)&#10;print(f&quot;Result: {result}&quot;)&#10;&#10;print(&quot;\nTesting 'hallo' with correction_budget=1:&quot;)&#10;result = trie.search('hallo', correction_budget=1)&#10;print(f&quot;Result: {result}&quot;)&#10;&#10;print(&quot;\nTesting exact match 'hello':&quot;)&#10;result = trie.search('hello')&#10;print(f&quot;Result: {result}&quot;)&#10;&#10;print(&quot;\nTesting 'heello' without correction budget:&quot;)&#10;result = trie.search('heello', correction_budget=0)&#10;print(f&quot;Result: {result}&quot;)" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
