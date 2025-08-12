@@ -72,6 +72,7 @@
           <value>
             <PendingDiffInfo>
               <option name="filePath" value="$PROJECT_DIR$/pyproject.toml" />
+              <option name="originalContent" value="&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;[project.optional-dependencies]&#10;dev = [&#10;    &quot;cython&gt;=3.0&quot;,&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;    &quot;build&gt;=1.0.0&quot;,&#10;    &quot;twine&gt;=5.0.0&quot;,&#10;]&#10;test = [&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;]&#10;" />
               <option name="updatedContent" value="&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;" />
             </PendingDiffInfo>
           </value>
