@@ -21,6 +21,8 @@ class PrefixTrie:
         :param allow_indels: If True, allows insertions and deletions in the trie
         """
         self.allow_indels = allow_indels
+        if not isinstance(entries, list):
+            entries = list(entries)  # Ensure entries is a list
         self._trie = cPrefixTrie(entries, allow_indels)
 
     def search(self, item: str, correction_budget: int=0) -> tuple[str, bool]:
