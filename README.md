@@ -1,6 +1,6 @@
 # PrefixTrie
 
-[![PyPI version](https://img.shields.io/pypi/v/prefix_trie.svg)](https://pypi.org/project/prefix_trie/)
+[![PyPI version](https://img.shields.io/pypi/v/PrefixTrie.svg)](https://pypi.org/project/PrefixTrie/)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/austinv11/PrefixTrie/ci.yml?branch=master)](https://github.com/austinv11/PrefixTrie/actions)
 [![License](https://img.shields.io/github/license/austinv11/PrefixTrie.svg)](https://github.com/austinv11/PrefixTrie/blob/master/LICENSE)
 
