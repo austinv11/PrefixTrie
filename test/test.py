@@ -1,7 +1,7 @@
 import pytest
 import pyximport
 pyximport.install()
-from prefixtrie._impl import cPrefixTrie
+from prefixtrie import PrefixTrie
 
 
 class TestPrefixTrieBasic:
@@ -9,7 +9,7 @@ class TestPrefixTrieBasic:
 
     def test_empty_trie(self):
         """Test creating an empty trie"""
-        trie = cPrefixTrie([])
+        trie = PrefixTrie([])
         result, exact = trie.search("test")
         assert result is None
         assert exact is False
@@ -21,7 +21,7 @@ class TestPrefixTrieBasic:
 
     def test_single_entry(self):
         """Test trie with single entry"""
-        trie = cPrefixTrie(["hello"])
+        trie = PrefixTrie(["hello"])
 
         # Exact match
         result, exact = trie.search("hello")
@@ -36,7 +36,7 @@ class TestPrefixTrieBasic:
     def test_multiple_entries(self):
         """Test trie with multiple entries"""
         entries = ["cat", "car", "card", "care", "careful"]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         for entry in entries:
             result, exact = trie.search(entry)
@@ -46,7 +46,7 @@ class TestPrefixTrieBasic:
     def test_trailing_and_missing_characters(self):
         """Ensure extra or missing characters are handled with indels"""
         entries = ["hello"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Extra character at the end should count as a deletion
         result, exact = trie.search("hello!", correction_budget=1)
@@ -61,7 +61,7 @@ class TestPrefixTrieBasic:
     def test_prefix_matching(self):
         """Test prefix-based matching"""
         entries = ["test", "testing", "tester", "tea", "team"]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         # Test exact matches for complete entries
         result, exact = trie.search("test")
@@ -84,7 +84,7 @@ class TestPrefixTrieEdgeCases:
     def test_empty_string_entry(self):
         """Test with empty string in entries"""
         # Empty strings may not be supported by this trie implementation
-        trie = cPrefixTrie(["hello", "world"])
+        trie = PrefixTrie(["hello", "world"])
 
         result, exact = trie.search("")
         assert result is None
@@ -92,7 +92,7 @@ class TestPrefixTrieEdgeCases:
 
     def test_single_character_entries(self):
         """Test with single character entries"""
-        trie = cPrefixTrie(["a", "b", "c"])
+        trie = PrefixTrie(["a", "b", "c"])
 
         result, exact = trie.search("a")
         assert result == "a"
@@ -104,7 +104,7 @@ class TestPrefixTrieEdgeCases:
 
     def test_duplicate_entries(self):
         """Test with duplicate entries"""
-        trie = cPrefixTrie(["hello", "hello", "world"])
+        trie = PrefixTrie(["hello", "hello", "world"])
 
         result, exact = trie.search("hello")
         assert result == "hello"
@@ -113,7 +113,7 @@ class TestPrefixTrieEdgeCases:
     def test_special_characters(self):
         """Test with special characters"""
         entries = ["hello!", "test@123", "a-b-c", "x_y_z"]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         for entry in entries:
             result, exact = trie.search(entry)
@@ -122,7 +122,7 @@ class TestPrefixTrieEdgeCases:
 
     def test_case_sensitivity(self):
         """Test case sensitivity"""
-        trie = cPrefixTrie(["Hello", "hello", "HELLO"])
+        trie = PrefixTrie(["Hello", "hello", "HELLO"])
 
         result, exact = trie.search("Hello")
         assert result == "Hello"
@@ -137,7 +137,7 @@ class TestPrefixTrieEdgeCases:
         assert exact is True
 
     def test_budget_increase_recomputes(self):
-        trie = cPrefixTrie(["hello"], allow_indels=True)
+        trie = PrefixTrie(["hello"], allow_indels=True)
         result, exact = trie.search("hallo", correction_budget=0)
         assert result is None and exact is False
 
@@ -151,7 +151,7 @@ class TestPrefixTrieFuzzyMatching:
     def test_basic_fuzzy_matching(self):
         """Test basic fuzzy matching with corrections"""
         entries = ["hello", "world", "python"]
-        trie = cPrefixTrie(entries, allow_indels=False)
+        trie = PrefixTrie(entries, allow_indels=False)
 
         # Test with 1 correction budget - single character substitution
         result, exact = trie.search("hallo", correction_budget=1)  # e->a substitution
@@ -165,7 +165,7 @@ class TestPrefixTrieFuzzyMatching:
     def test_fuzzy_matching_with_indels(self):
         """Test fuzzy matching with insertions and deletions"""
         entries = ["hello", "world"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test simple substitution that should work
         result, exact = trie.search("hallo", correction_budget=1)
@@ -180,7 +180,7 @@ class TestPrefixTrieFuzzyMatching:
     def test_correction_budget_limits(self):
         """Test that correction budget is respected"""
         entries = ["hello"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Should find with budget of 2
         result, exact = trie.search("hallo", correction_budget=2)
@@ -195,7 +195,7 @@ class TestPrefixTrieFuzzyMatching:
     def test_multiple_corrections(self):
         """Test queries requiring multiple corrections"""
         entries = ["testing"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Two substitutions
         result, exact = trie.search("taxting", correction_budget=2)
@@ -219,7 +219,7 @@ class TestPrefixTriePerformance:
             "0123456789",
             "!@#$%^&*()_+-="
         ]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         for entry in entries:
             result, exact = trie.search(entry)
@@ -230,7 +230,7 @@ class TestPrefixTriePerformance:
         """Test with very long strings"""
         long_string = "a" * 1000
         entries = [long_string, long_string + "b"]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         result, exact = trie.search(long_string)
         assert result == long_string
@@ -239,7 +239,7 @@ class TestPrefixTriePerformance:
     def test_many_entries(self):
         """Test with many entries"""
         entries = [f"entry_{i:04d}" for i in range(1000)]
-        trie = cPrefixTrie(entries)
+        trie = PrefixTrie(entries)
 
         # Test a few random entries
         test_entries = [entries[0], entries[500], entries[999]]
@@ -255,7 +255,7 @@ class TestPrefixTrieDNASequences:
     def test_dna_sequences(self):
         """Test with DNA sequences"""
         sequences = ["ACGT", "TCGA", "AAAA", "TTTT", "CCCC", "GGGG"]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Exact matches
         for seq in sequences:
@@ -266,7 +266,7 @@ class TestPrefixTrieDNASequences:
     def test_dna_fuzzy_matching(self):
         """Test fuzzy matching with DNA sequences"""
         sequences = ["ACGT", "TCGA"]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Single base substitution
         result, exact = trie.search("ACCT", correction_budget=1)
@@ -286,7 +286,7 @@ class TestPrefixTrieDNASequences:
     def test_similar_sequences(self):
         """Test with very similar sequences"""
         sequences = ["ATCG", "ATCGA", "ATCGAA", "ATCGAAA"]
-        trie = cPrefixTrie(sequences)
+        trie = PrefixTrie(sequences)
 
         for seq in sequences:
             result, exact = trie.search(seq)
@@ -305,7 +305,7 @@ class TestPrefixTrieDNASequences:
             "TTAATTAATTAATTAATTAATTAATTAATTAATTAATTAATTAA",  # 43 bases
             "GCCGGCCGGCCGGCCGGCCGGCCGGCCGGCCGGCCGGCCGGCCG"  # 45 bases
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -330,7 +330,7 @@ class TestPrefixTrieDNASequences:
             # 200 base sequence
             "TCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG"
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -356,7 +356,7 @@ class TestPrefixTrieDNASequences:
             # Ribosome binding site
             "AGGAGGTTGACATGAAACGTCTAG",
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -384,7 +384,7 @@ class TestPrefixTrieDNASequences:
             "GAATTCGAATTCGAATTCGAATTC",
             "GCTAGCGCTAGCGCTAGCGCTAGC",
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -394,7 +394,7 @@ class TestPrefixTrieDNASequences:
 
         # Test with a shorter repetitive sequence for fuzzy matching
         short_sequences = ["CACA", "GTGT", "ATAT"]
-        short_trie = cPrefixTrie(short_sequences, allow_indels=True)
+        short_trie = PrefixTrie(short_sequences, allow_indels=True)
 
         result, exact = short_trie.search("CACX", correction_budget=1)
         assert result == "CACA"
@@ -413,7 +413,7 @@ class TestPrefixTrieDNASequences:
             # Very long sequence (500+ bases)
             "A" * 100 + "T" * 100 + "C" * 100 + "G" * 100 + "ATCG" * 25,
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches for all lengths
         for seq in sequences:
@@ -438,7 +438,7 @@ class TestPrefixTrieDNASequences:
             "ATCGWSATCGWS",  # W=A/T, S=G/C
             "MRYGATKBHDVM",  # Mixed ambiguous bases
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -457,7 +457,7 @@ class TestPrefixTrieDNASequences:
             "GGGGGAGGTGGA",  # Glycine codons
             "CCACCGCCACCCCCT",  # Proline codons
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -479,7 +479,7 @@ class TestPrefixTrieDNASequences:
             "A" * 500 + "T" * 500,  # 1000 bases, two halves
             ("ATCGATCGATCG" * 100)[:1500],  # 1500 bases
         ]
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test exact matches
         for seq in sequences:
@@ -506,7 +506,7 @@ class TestPrefixTrieDNASequences:
                 seq += bases[(i * 50 + j) % 4]
             sequences.append(seq)
 
-        trie = cPrefixTrie(sequences, allow_indels=True)
+        trie = PrefixTrie(sequences, allow_indels=True)
 
         # Test a subset for correctness
         test_sequences = sequences[::10]  # Every 10th sequence
@@ -516,12 +516,50 @@ class TestPrefixTrieDNASequences:
             assert exact is True
 
 
+class TestPrefixTrieDunderMethods:
+    """Test dunder methods of PrefixTrie"""
+
+    def test_contains(self):
+        trie = PrefixTrie(["foo", "bar"])
+        assert "foo" in trie
+        assert "bar" in trie
+        assert "baz" not in trie
+
+    def test_iter(self):
+        entries = ["a", "b", "c"]
+        trie = PrefixTrie(entries)
+        assert set(iter(trie)) == set(entries)
+
+    def test_len(self):
+        entries = ["x", "y", "z"]
+        trie = PrefixTrie(entries)
+        assert len(trie) == 3
+        empty_trie = PrefixTrie([])
+        assert len(empty_trie) == 0
+
+    def test_getitem(self):
+        trie = PrefixTrie(["alpha", "beta"])
+        assert trie["alpha"] == "alpha"
+        assert trie["beta"] == "beta"
+        with pytest.raises(KeyError):
+            _ = trie["gamma"]
+
+    def test_repr_and_str(self):
+        trie = PrefixTrie(["one", "two"], allow_indels=True)
+        r = repr(trie)
+        s = str(trie)
+        assert "PrefixTrie" in r
+        assert "PrefixTrie" in s
+        assert "allow_indels=True" in r
+        assert "allow_indels=True" in s
+
+
 class TestPrefixTrieErrorHandling:
     """Test error handling and edge cases"""
 
     def test_invalid_correction_budget(self):
         """Test with negative correction budget"""
-        trie = cPrefixTrie(["hello"])
+        trie = PrefixTrie(["hello"])
 
         # Negative budget should be treated as 0
         result, exact = trie.search("hallo", correction_budget=-1)
@@ -534,7 +572,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_insertion_and_deletion_operations(self):
         """Test specific insertion and deletion operations in fuzzy matching"""
         entries = ["hello", "help", "helicopter"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test insertions - query is shorter than target
         result, exact = trie.search("hell", correction_budget=1)  # could be "hello" or "help" (both 1 edit)
@@ -562,7 +600,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_complex_indel_combinations(self):
         """Test combinations of insertions, deletions, and substitutions"""
         entries = ["algorithm", "logarithm", "rhythm"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Combination: deletion + substitution
         result, exact = trie.search("algrothm", correction_budget=2)  # missing 'i', 'i'->'o'
@@ -577,7 +615,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_prefix_collision_scenarios(self):
         """Test scenarios where prefixes collide and could cause issues"""
         entries = ["a", "aa", "aaa", "aaaa", "aaaaa"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Exact matches should work
         for entry in entries:
@@ -600,7 +638,7 @@ class TestPrefixTrieAdvancedEdgeCases:
             "programming", "programmer", "programmed", "programmable",
             "program", "programs", "programmatic"
         ]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
         for entry in entries:
@@ -620,7 +658,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_empty_and_very_short_queries(self):
         """Test behavior with empty and very short queries"""
         entries = ["a", "ab", "abc", "hello", "world"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Empty query
         result, exact = trie.search("", correction_budget=0)
@@ -639,7 +677,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_correction_budget_edge_cases(self):
         """Test edge cases around correction budget limits"""
         entries = ["test", "best", "rest", "nest"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Exact budget limit
         result, exact = trie.search("zest", correction_budget=1)  # 'z'->'t', 'e'->'e', 's'->'s', 't'->'t'
@@ -663,7 +701,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_alphabet_boundary_conditions(self):
         """Test with characters at alphabet boundaries"""
         entries = ["aaa", "zzz", "AZaz", "09azAZ"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
         for entry in entries:
@@ -684,7 +722,7 @@ class TestPrefixTrieAdvancedEdgeCases:
         """Test edge cases with collapsed paths in the trie"""
         # Create entries that will cause path collapsing
         entries = ["abcdefghijk", "abcdefghijl", "xyz"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
         for entry in entries:
@@ -702,7 +740,7 @@ class TestPrefixTrieAdvancedEdgeCases:
         """Test operations that might stress memory management"""
         # Create many similar entries
         entries = [f"pattern{i:03d}suffix" for i in range(100)]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test a few random exact matches
         test_entries = [entries[0], entries[50], entries[99]]
@@ -719,7 +757,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_very_high_correction_budget(self):
         """Test with very high correction budgets"""
         entries = ["short", "verylongstring"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Very high budget should still work correctly
         result, exact = trie.search("x", correction_budget=100)
@@ -733,7 +771,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_indel_vs_substitution_preference(self):
         """Test algorithm preference between indels and substitutions"""
         entries = ["abc", "abcd", "abce"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # This query could match "abc" with 1 deletion or "abcd"/"abce" with 1 substitution
         result, exact = trie.search("abcx", correction_budget=1)
@@ -744,7 +782,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_multiple_valid_corrections(self):
         """Test scenarios where multiple corrections have same cost"""
         entries = ["cat", "bat", "hat", "rat"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that's 1 edit away from multiple entries
         result, exact = trie.search("dat", correction_budget=1)
@@ -762,7 +800,7 @@ class TestPrefixTrieAdvancedEdgeCases:
             "a", "ab", "abc", "abcd", "abcde", "abcdef",
             "abcdeg", "abcdeh", "abcdei"
         ]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
         for entry in entries:
@@ -788,10 +826,10 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         # Filter out empty string if not supported
         try:
-            trie = cPrefixTrie(entries, allow_indels=True)
+            trie = PrefixTrie(entries, allow_indels=True)
         except:
             entries = entries[1:]  # Remove empty string
-            trie = cPrefixTrie(entries, allow_indels=True)
+            trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches for supported entries
         for entry in entries:
@@ -803,7 +841,7 @@ class TestPrefixTrieAdvancedEdgeCases:
     def test_cache_behavior_stress(self):
         """Test to stress the internal cache mechanisms"""
         entries = ["cache", "caching", "cached", "caches"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Repeatedly search similar queries to stress cache
         queries = ["cachx", "cachng", "cachd", "cachs", "cach"]
@@ -820,7 +858,7 @@ class TestPrefixTrieAlgorithmCorrectness:
     def test_edit_distance_calculation(self):
         """Test that edit distances are calculated correctly"""
         entries = ["kitten", "sitting"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # "kitten" -> "sitting" requires 3 edits (k->s, e->i, insert g)
         result, exact = trie.search("kitten", correction_budget=3)
@@ -836,7 +874,7 @@ class TestPrefixTrieAlgorithmCorrectness:
     def test_optimal_alignment_selection(self):
         """Test that the algorithm selects optimal alignments"""
         entries = ["ACGT", "TGCA"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that could align different ways
         result, exact = trie.search("ACGA", correction_budget=2)
@@ -846,7 +884,7 @@ class TestPrefixTrieAlgorithmCorrectness:
     def test_backtracking_scenarios(self):
         """Test scenarios that might require backtracking in search"""
         entries = ["abcdef", "abcxyz", "defghi"]
-        trie = cPrefixTrie(entries, allow_indels=True)
+        trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that shares prefix with multiple entries
         result, exact = trie.search("abcxef", correction_budget=2)
@@ -872,7 +910,7 @@ class TestLargeWhitelist:
     def test_thousands_of_barcodes(self):
         # Generate 10k deterministic 16bp barcodes
         barcodes = generate_barcodes(10000)
-        trie = cPrefixTrie(barcodes, allow_indels=True)
+        trie = PrefixTrie(barcodes, allow_indels=True)
 
         # Spot check a few barcodes for exact match
         samples = [barcodes[0], barcodes[123], barcodes[9999], barcodes[5000], barcodes[7777]]
@@ -898,12 +936,12 @@ if __name__ == "__main__":
     print("Running smoke test...")
 
     # Basic functionality test
-    trie = cPrefixTrie(["hello", "world", "test"])
+    trie = PrefixTrie(["hello", "world", "test"])
     result, exact = trie.search("hello")
     assert result == "hello" and exact is True
 
     # Fuzzy matching test
-    trie_fuzzy = cPrefixTrie(["hello"], allow_indels=True)
+    trie_fuzzy = PrefixTrie(["hello"], allow_indels=True)
     result, exact = trie_fuzzy.search("hllo", correction_budget=1)
     assert result == "hello" and exact is False
 

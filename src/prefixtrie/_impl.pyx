@@ -161,6 +161,17 @@ cdef inline bint cache_insert_if_better(CacheState* st, Key key, SearchResult in
         else:
             return False
 
+
+cdef void _traverse(TrieNode* n, list entries):
+    if n is NULL:
+        return
+    cdef int cn = n_children(n)
+    if has_complete(n):
+        entries.append(c_str_to_py_str(n.leaf_value))
+    if cn > 0:
+        for i in range(cn):
+            _traverse(child_at(n, i), entries)
+
 # -----------------------------
 # Trie object (only search() exposed to Python)
 # -----------------------------
@@ -201,6 +212,25 @@ cdef class cPrefixTrie:
             last_id = self._insert(entry, last_id)
             self.n_entries += 1
         self._compile(self.root)
+
+    cpdef object make_iter(self):
+        """
+        Create an iterator over the entries in the trie.
+        This is a placeholder for future implementation.
+        """
+        cdef TrieNode* node = self.root
+        cdef list entries = []
+        _traverse(node, entries)
+        return iter(entries)
+
+
+    cpdef int n_values(self):
+        """
+        Get the number of entries in the trie.
+        :return: The number of entries in the trie.
+        """
+        return self.n_entries
+
 
     cdef int _insert(self, str entry, size_t last_id):
         cdef TrieNode* node = self.root
@@ -292,9 +322,9 @@ cdef class cPrefixTrie:
             node.collapsed_len = 1
             node.skip_to = node
 
-    cpdef tuple[object, bint] search(self, str query, int correction_budget=0):
+    cpdef tuple[str, bint] search(self, str query, int correction_budget=0):
         cdef Str c_query = py_str_to_c_str(query)
-        cdef object found_str_py = None
+        cdef str found_str_py = None
         cdef size_t query_len = strlen(c_query)
         cdef CacheState* st = cache_new()
         cache_reserve(st, query_len)  # Pre-allocate some space

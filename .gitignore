@@ -145,5 +145,5 @@ Thumbs.db
 *.html
 
 # Build artifacts
-*.lock
+!uv.lock
 _version.py
