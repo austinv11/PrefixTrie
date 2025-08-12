@@ -205,7 +205,7 @@ cdef class cPrefixTrie:
     cdef int _insert(self, str entry, size_t last_id):
         cdef TrieNode* node = self.root
         cdef char ch
-        cdef bint found
+        cdef bint found, inserted_new = False
         cdef TrieNode* last_node = NULL
         cdef TrieNode* new_node = NULL
         cdef Str c_entry = py_str_to_c_str(entry)
@@ -220,6 +220,7 @@ cdef class cPrefixTrie:
             if node.children[idx] != NULL:
                 node = node.children[idx]
             else:
+                inserted_new = True
                 for k in range(n-1, i-1, -1):
                     new_node = create_node(last_id, c_entry[k], NULL, <size_t> self.alphabet.size)
                     last_id += 1
@@ -235,6 +236,11 @@ cdef class cPrefixTrie:
                 append_child_at_index(node, last_node, idx)
                 break
 
+        if not inserted_new and node.leaf_value == NULL:
+            node.leaf_value = <Str> malloc(strlen(c_entry) + 1)
+            if not node.leaf_value:
+                raise MemoryError("Failed to allocate memory for leaf value")
+            strcpy(node.leaf_value, c_entry)
         free(c_entry)
         return last_id
 
@@ -321,6 +327,7 @@ cdef class cPrefixTrie:
         cdef SearchResult result
         cdef SearchResult potential
         cdef SearchResult prev
+        cdef SearchResult best_result
         cdef bint is_at_query_end = (query_len == curr_idx)
         cdef size_t i
         cdef char query_char
@@ -329,6 +336,8 @@ cdef class cPrefixTrie:
         cdef int want
         cdef int idx_child
         cdef int ai
+        cdef Str skip_str
+        cdef TrieNode* child_node
 
         result.found = False
         result.corrections = curr_corrections
@@ -356,12 +365,11 @@ cdef class cPrefixTrie:
                 # We can match here but need to add corrections for remaining query characters
                 remaining_chars = query_len - curr_idx
                 if curr_corrections + remaining_chars <= max_corrections:
-                    result.found = True
-                    result.found_str = node.leaf_value
-                    result.corrections = curr_corrections + remaining_chars
-                    if not cache_insert_if_better(st, node_key, result):
-                        return cache_get(st, node_key)
-                    return result
+                    potential.found = True
+                    potential.found_str = node.leaf_value
+                    potential.corrections = curr_corrections + remaining_chars
+                    cache_insert_if_better(st, node_key, potential)
+                    result = potential
 
         if is_at_query_end and (not allow_indels or curr_corrections >= max_corrections):
             if not cache_insert_if_better(st, node_key, result):
@@ -376,16 +384,21 @@ cdef class cPrefixTrie:
         # Collapsed exact skip
         if node.collapsed is not NULL and node.skip_to is not NULL and node.skip_to != node:
             skip_len = node.collapsed_len
-            # For exact skip, the collapsed path must match AND we must be able to consume it exactly
-            if curr_idx + skip_len <= query_len and strncmp(node.collapsed, query + curr_idx, skip_len) == 0:
-                # Only do exact skip if we're at the end of query or if we're allowing corrections
-                if curr_idx + skip_len == query_len or allow_indels:
-                    potential = self._search(st, node.skip_to, query, query_len, curr_idx + skip_len,
-                                             curr_corrections, max_corrections, allow_indels, exact_only)
-                    if potential.found and (exact_only or potential.corrections <= curr_corrections or not allow_indels):
-                        return potential
-                    # Otherwise cache it and continue exploring
-                    cache_insert_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels), potential)
+            skip_str = node.collapsed
+            if node.value != '\0':  # Root node should not count its value
+                skip_len -= 1
+                skip_str = node.collapsed + 1
+            if skip_len > 0:
+                # For exact skip, the collapsed path must match AND we must be able to consume it exactly
+                if curr_idx + skip_len <= query_len and strncmp(skip_str, query + curr_idx, skip_len) == 0:
+                    # Only do exact skip if we're at the end of query or if we're allowing corrections
+                    if curr_idx + skip_len == query_len or allow_indels:
+                        potential = self._search(st, node.skip_to, query, query_len, curr_idx + skip_len,
+                                                 curr_corrections, max_corrections, allow_indels, exact_only)
+                        if potential.found and (exact_only or potential.corrections <= curr_corrections or not allow_indels):
+                            return potential
+                        # Otherwise cache it and continue exploring
+                        cache_insert_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels), potential)
 
         # Exact character match (O(1) via alphabet index)
         if curr_idx < query_len:
@@ -411,15 +424,22 @@ cdef class cPrefixTrie:
             query_char = query[curr_idx]
             want = self.alphabet.map[<unsigned char> query_char]
             m = n_children(node)
+            best_result.found = False
+            best_result.corrections = max_corrections + 1
             for i in range(m):
                 idx_child = deref(node.children_idx)[i]
                 if idx_child == want:
                     continue
-                potential = self._search(st, node.children[idx_child], query, query_len, curr_idx + 1,
+                child_node = node.children[idx_child]
+                potential = self._search(st, child_node, query, query_len, curr_idx + 1,
                                          curr_corrections + 1, max_corrections, allow_indels, exact_only)
-                if potential.found:
-                    return potential
-                cache_insert_if_better(st, make_key(node.children[idx_child].node_id, curr_idx + 1, allow_indels), potential)
+                cache_insert_if_better(st, make_key(child_node.node_id, curr_idx + 1, allow_indels), potential)
+                if potential.found and potential.corrections < best_result.corrections:
+                    best_result = potential
+
+            if best_result.found:
+                return best_result
+
 
         # Try indels if allowed
         if allow_indels:
