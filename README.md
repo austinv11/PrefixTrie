@@ -27,7 +27,7 @@ The main optimizations are:
 ## Basic Usage
 
 ```python
-from prefix_trie import PrefixTrie
+from prefixtrie import PrefixTrie
 trie = PrefixTrie(["ACGT", "ACGG", "ACGC"], allow_indels=True)
 print(trie.search("ACGT"))
 >> ("ACGT", True)  # Exact match
@@ -45,7 +45,7 @@ print(trie.search("AG", max_substitutions=1))
 
 Pip (Recommended):
 ```bash
-pip install prefix_trie
+pip install PrefixTrie
 ```
 
 From Source (ensure you have a C++ compiler and Cython installed):
