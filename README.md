@@ -31,14 +31,70 @@ from prefixtrie import PrefixTrie
 trie = PrefixTrie(["ACGT", "ACGG", "ACGC"], allow_indels=True)
 print(trie.search("ACGT"))
 >> ("ACGT", True)  # Exact match
-print(trie.search("ACGA", max_substitutions=1))
+print(trie.search("ACGA", correction_budget=1))
 >> ("ACGT", False)  # One substitution away
-print(trie.search("ACG", max_substitutions=1))
+print(trie.search("ACG", correction_budget=1))
 >> ("ACGT", False)  # One insertion away
-print(trie.search("ACGTA", max_substitutions=1))
+print(trie.search("ACGTA", correction_budget=1))
 >> ("ACGT", False)  # One deletion away
-print(trie.search("AG", max_substitutions=1))
->> None  # No match
+print(trie.search("AG", correction_budget=1))
+>> (None, False)  # No match
+```
+
+## Multiprocessing Support
+
+**New!** PrefixTrie is now pickle-compatible for easy use with multiprocessing:
+
+```python
+import multiprocessing as mp
+from prefixtrie import PrefixTrie
+
+def search_worker(trie, query):
+    """Worker function that uses the trie"""
+    return trie.search(query, correction_budget=1)
+
+# Create trie
+entries = [f"barcode_{i:06d}" for i in range(10000)]
+trie = PrefixTrie(entries, allow_indels=True)
+
+# Use with multiprocessing (trie is automatically pickled)
+with mp.Pool(processes=4) as pool:
+    queries = ["barcode_000123", "barcode_999999", "invalid_code"]
+    results = pool.starmap(search_worker, [(trie, q) for q in queries])
+    
+for query, (result, exact) in zip(queries, results):
+    print(f"Query: {query} -> Found: {result}, Exact: {exact}")
+```
+
+## High-Performance Shared Memory
+
+For large tries and intensive multiprocessing, use shared memory for better performance:
+
+```python
+import multiprocessing as mp
+from prefixtrie import create_shared_trie, load_shared_trie
+
+def search_worker(shared_memory_name, query):
+    """Worker function that loads trie from shared memory"""
+    trie = load_shared_trie(shared_memory_name)  # Fast loading!
+    return trie.search(query, correction_budget=1)
+
+# Create large trie in shared memory
+entries = [f"gene_sequence_{i:08d}" for i in range(100000)]
+trie, shm_name = create_shared_trie(entries, allow_indels=True)
+
+try:
+    # Use with multiprocessing - much faster for large tries!
+    with mp.Pool(processes=8) as pool:
+        queries = ["gene_sequence_00001234", "gene_sequence_99999999", "mutated_sequence"]
+        results = pool.starmap(search_worker, [(shm_name, q) for q in queries])
+    
+    for query, (result, exact) in zip(queries, results):
+        print(f"Query: {query} -> Found: {result}, Exact: {exact}")
+        
+finally:
+    # Clean up shared memory
+    trie.cleanup_shared_memory()
 ```
 
 ## Installation
@@ -66,5 +122,3 @@ uv sync --group test
 uv pip install -e .
 pytest tests/
 ```
-
-

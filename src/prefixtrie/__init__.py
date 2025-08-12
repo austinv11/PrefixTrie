@@ -1,4 +1,8 @@
 from ._impl import cPrefixTrie
+import pickle
+import multiprocessing.shared_memory as shm
+import weakref
+import atexit
 
 try:
     from ._version import __version__
@@ -7,23 +11,153 @@ except ImportError:
     __version__ = "unknown"
 
 
+# Global registry to track shared memory blocks for cleanup
+_shared_memory_registry = weakref.WeakSet()
+_cleanup_registered = False
+
+
+def _cleanup_shared_memory():
+    """Clean up any remaining shared memory blocks on exit"""
+    for shm_block in list(_shared_memory_registry):
+        try:
+            shm_block.unlink()
+        except:
+            pass  # Ignore errors during cleanup
+
+
 class PrefixTrie:
     """
     Thin wrapper around the cPrefixTrie class to provide a Python interface.
     """
 
-    __slots__ = ("_trie","allow_indels")
+    __slots__ = ("_trie", "allow_indels", "_entries", "_shared_memory", "_is_shared_owner")
 
-    def __init__(self, entries: list[str], allow_indels: bool=False):
+    def __init__(self, entries: list[str], allow_indels: bool=False, shared_memory_name: str=None):
         """
         Initialize the PrefixTrie with the given arguments.
         :param entries: List of strings to be added to the trie.
         :param allow_indels: If True, allows insertions and deletions in the trie
+        :param shared_memory_name: If provided, load from existing shared memory block
         """
-        self.allow_indels = allow_indels
-        if not isinstance(entries, list):
-            entries = list(entries)  # Ensure entries is a list
-        self._trie = cPrefixTrie(entries, allow_indels)
+        global _cleanup_registered
+
+        if shared_memory_name:
+            # Load from shared memory
+            self._load_from_shared_memory(shared_memory_name)
+        else:
+            # Normal initialization
+            self.allow_indels = allow_indels
+            if not isinstance(entries, list):
+                entries = list(entries)  # Ensure entries is a list
+            self._entries = entries  # Store original entries for pickle support
+            self._trie = cPrefixTrie(entries, allow_indels)
+            self._shared_memory = None
+            self._is_shared_owner = False
+
+        # Register cleanup handler once
+        if not _cleanup_registered:
+            atexit.register(_cleanup_shared_memory)
+            _cleanup_registered = True
+
+    def create_shared_memory(self, name: str=None) -> str:
+        """
+        Create a shared memory block containing this trie's data.
+        Returns the name of the shared memory block.
+
+        :param name: Optional name for the shared memory block
+        :return: Name of the created shared memory block
+        """
+        # Serialize the trie data
+        data = {
+            'entries': self._entries,
+            'allow_indels': self.allow_indels
+        }
+        serialized_data = pickle.dumps(data)
+
+        # Create shared memory block
+        try:
+            if name:
+                shm_block = shm.SharedMemory(name=name, create=True, size=len(serialized_data))
+            else:
+                shm_block = shm.SharedMemory(create=True, size=len(serialized_data))
+
+            # Copy data to shared memory
+            shm_block.buf[:len(serialized_data)] = serialized_data
+
+            # Track for cleanup
+            _shared_memory_registry.add(shm_block)
+
+            # Store reference for potential cleanup
+            self._shared_memory = shm_block
+            self._is_shared_owner = True
+
+            return shm_block.name
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to create shared memory: {e}")
+
+    def _load_from_shared_memory(self, name: str):
+        """Load trie data from shared memory block"""
+        try:
+            # Connect to existing shared memory
+            shm_block = shm.SharedMemory(name=name, create=False)
+
+            # Deserialize data
+            serialized_data = bytes(shm_block.buf)
+            data = pickle.loads(serialized_data)
+
+            # Initialize trie
+            self.allow_indels = data['allow_indels']
+            self._entries = data['entries']
+            self._trie = cPrefixTrie(self._entries, self.allow_indels)
+
+            # Store reference (but not as owner)
+            self._shared_memory = shm_block
+            self._is_shared_owner = False
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to load from shared memory '{name}': {e}")
+
+    def cleanup_shared_memory(self):
+        """Clean up shared memory if this instance owns it"""
+        if hasattr(self, '_shared_memory') and self._shared_memory and hasattr(self, '_is_shared_owner') and self._is_shared_owner:
+            try:
+                self._shared_memory.unlink()
+                _shared_memory_registry.discard(self._shared_memory)
+            except:
+                pass  # Ignore errors
+            finally:
+                self._shared_memory = None
+                self._is_shared_owner = False
+
+    def __getstate__(self):
+        """
+        Support for pickle serialization.
+        Returns the state needed to reconstruct the object.
+        """
+        return {
+            'entries': self._entries,
+            'allow_indels': self.allow_indels
+        }
+
+    def __setstate__(self, state):
+        """
+        Support for pickle deserialization.
+        Reconstructs the object from the pickled state.
+        """
+        self.allow_indels = state['allow_indels']
+        self._entries = state['entries']
+        self._trie = cPrefixTrie(self._entries, self.allow_indels)
+        self._shared_memory = None
+        self._is_shared_owner = False
+
+    def __del__(self):
+        """Clean up shared memory on deletion if we own it"""
+        try:
+            self.cleanup_shared_memory()
+        except AttributeError:
+            # Object may not be fully initialized
+            pass
 
     def search(self, item: str, correction_budget: int=0) -> tuple[str, bool]:
         """
@@ -84,4 +218,29 @@ class PrefixTrie:
         return found
 
 
-__all__ = ["PrefixTrie"]
+# Convenience function for shared memory multiprocessing
+def create_shared_trie(entries: list[str], allow_indels: bool=False, name: str=None) -> tuple[PrefixTrie, str]:
+    """
+    Create a PrefixTrie and put it in shared memory for multiprocessing.
+
+    :param entries: List of strings to add to the trie
+    :param allow_indels: Whether to allow insertions/deletions
+    :param name: Optional name for shared memory block
+    :return: Tuple of (trie_instance, shared_memory_name)
+    """
+    trie = PrefixTrie(entries, allow_indels)
+    shm_name = trie.create_shared_memory(name)
+    return trie, shm_name
+
+
+def load_shared_trie(shared_memory_name: str) -> PrefixTrie:
+    """
+    Load a PrefixTrie from shared memory.
+
+    :param shared_memory_name: Name of the shared memory block
+    :return: PrefixTrie instance loaded from shared memory
+    """
+    return PrefixTrie([], shared_memory_name=shared_memory_name)
+
+
+__all__ = ["PrefixTrie", "create_shared_trie", "load_shared_trie"]
