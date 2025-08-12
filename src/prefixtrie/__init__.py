@@ -1,3 +1,3 @@
-from ._impl import cPrefixTrie
+from ._impl import cPrefixTrie as PrefixTrie
 
-__all__ = ["cPrefixTrie"]
+__all__ = ["PrefixTrie"]

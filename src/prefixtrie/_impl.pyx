@@ -84,7 +84,7 @@ cdef inline bint is_leaf(const TrieNode* node) noexcept nogil:
     return n_children(node) == 0
 
 cdef inline bint has_complete(const TrieNode* node) noexcept nogil:
-    return is_leaf(node) or node.leaf_value != NULL
+    return node.leaf_value != NULL
 
 # -----------------------------
 # Search result POD
@@ -332,7 +332,8 @@ cdef class cPrefixTrie:
         cdef size_t i
         cdef char query_char
         cdef size_t skip_len
-        cdef size_t m  # Move variable declaration to top
+        cdef size_t remaining_chars
+        cdef size_t m
         cdef int want
         cdef int idx_child
         cdef int ai
@@ -345,7 +346,6 @@ cdef class cPrefixTrie:
 
         # Cache check
         cdef Key node_key = make_key(node.node_id, curr_idx, allow_indels)
-        prev = cache_get(st, node_key)
         if cache_contains(st, node_key):
             prev = cache_get(st, node_key)
             if prev.corrections <= curr_corrections:

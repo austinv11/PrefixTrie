@@ -13,6 +13,11 @@ class TestPrefixTrieBasic:
         result, exact = trie.search("test")
         assert result is None
         assert exact is False
+        # Searching for an empty string in an empty trie should not report an
+        # exact match.
+        result, exact = trie.search("")
+        assert result is None
+        assert exact is False
 
     def test_single_entry(self):
         """Test trie with single entry"""
@@ -37,6 +42,21 @@ class TestPrefixTrieBasic:
             result, exact = trie.search(entry)
             assert result == entry
             assert exact is True
+
+    def test_trailing_and_missing_characters(self):
+        """Ensure extra or missing characters are handled with indels"""
+        entries = ["hello"]
+        trie = cPrefixTrie(entries, allow_indels=True)
+
+        # Extra character at the end should count as a deletion
+        result, exact = trie.search("hello!", correction_budget=1)
+        assert result == "hello"
+        assert exact is False
+
+        # Missing character should be handled as an insertion
+        result, exact = trie.search("hell", correction_budget=1)
+        assert result == "hello"
+        assert exact is False
 
     def test_prefix_matching(self):
         """Test prefix-based matching"""
@@ -116,6 +136,14 @@ class TestPrefixTrieEdgeCases:
         assert result == "HELLO"
         assert exact is True
 
+    def test_budget_increase_recomputes(self):
+        trie = cPrefixTrie(["hello"], allow_indels=True)
+        result, exact = trie.search("hallo", correction_budget=0)
+        assert result is None and exact is False
+
+        # With more corrections available, the match should now succeed
+        result, exact = trie.search("hallo", correction_budget=1)
+        assert result == "hello" and exact is False
 
 class TestPrefixTrieFuzzyMatching:
     """Test fuzzy matching capabilities"""
