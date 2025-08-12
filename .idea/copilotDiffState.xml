@@ -3,10 +3,28 @@
   <component name="CopilotDiffPersistence">
     <option name="pendingDiffs">
       <map>
-        <entry key="$PROJECT_DIR$/.gitignore">
+        <entry key="$PROJECT_DIR$/.github/workflows/ci.yml">
           <value>
             <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/.gitignore" />
+              <option name="filePath" value="$PROJECT_DIR$/.github/workflows/ci.yml" />
+              <option name="originalContent" value="name: CI&#10;&#10;on:&#10;  push:&#10;    branches: [ master, main ]&#10;  pull_request:&#10;  workflow_dispatch:&#10;&#10;jobs:&#10;  test:&#10;    strategy:&#10;      matrix:&#10;        os: [ubuntu-latest, macos-latest, windows-latest]&#10;        python-version: ['3.10', '3.11', '3.12', '3.x']&#10;      fail-fast: false&#10;    runs-on: ${{ matrix.os }}&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;        with:&#10;          fetch-depth: 0  # Needed for setuptools-scm&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: ${{ matrix.python-version }}&#10;      - name: Install dependencies&#10;        env:&#10;          CFLAGS: &quot;-O3&quot;&#10;          CXXFLAGS: &quot;-O3&quot;&#10;        run: |&#10;          python -m pip install --upgrade pip&#10;          pip install -e .[test]&#10;      - name: Run tests&#10;        run: pytest" />
+              <option name="updatedContent" value="name: CI&#10;&#10;on:&#10;  push:&#10;    branches: [ master, main ]&#10;  pull_request:&#10;  workflow_dispatch:&#10;&#10;jobs:&#10;  test:&#10;    strategy:&#10;      matrix:&#10;        os: [ubuntu-latest, macos-latest, windows-latest]&#10;        python-version: ['3.10', '3.11', '3.12', '3.x']&#10;      fail-fast: false&#10;    runs-on: ${{ matrix.os }}&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;        with:&#10;          fetch-depth: 0  # Needed for setuptools-scm&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: ${{ matrix.python-version }}&#10;      - name: Install dependencies&#10;        env:&#10;          CFLAGS: &quot;-O3&quot;&#10;          CXXFLAGS: &quot;-O3&quot;&#10;        run: |&#10;          python -m pip install --upgrade pip&#10;          pip install -e .[test]&#10;      - name: Run tests&#10;        run: pytest" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/.github/workflows/release.yml">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/.github/workflows/release.yml" />
+              <option name="originalContent" value="name: Build and Publish&#10;&#10;on:&#10;  release:&#10;    types: [published]&#10;  workflow_dispatch:&#10;&#10;jobs:&#10;  build-wheels:&#10;    name: Build wheels on ${{ matrix.os }}&#10;    runs-on: ${{ matrix.os }}&#10;    strategy:&#10;      matrix:&#10;        os: [ubuntu-latest, macos-latest, windows-latest]&#10;        include:&#10;          - os: ubuntu-latest&#10;            cflags: &quot;-O3&quot;&#10;          - os: macos-latest&#10;            cflags: &quot;-O3&quot;&#10;          - os: windows-latest&#10;            cflags: &quot;/O2&quot;&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;        with:&#10;          fetch-depth: 0  # Needed for setuptools-scm to get proper version&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: '3.x'&#10;      - name: Install cibuildwheel&#10;        run: |&#10;          python -m pip install --upgrade pip&#10;          pip install cibuildwheel&#10;      - name: Build wheels&#10;        env:&#10;          CIBW_SKIP: cp36-* cp37-* cp38-* cp39-*&#10;          CIBW_ENVIRONMENT: &quot;CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}'&quot;&#10;        run: cibuildwheel --output-dir dist&#10;      - uses: actions/upload-artifact@v4&#10;        with:&#10;          name: wheels-${{ matrix.os }}&#10;          path: dist/*.whl&#10;&#10;  build-sdist:&#10;    runs-on: ubuntu-latest&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: '3.x'&#10;      - name: Build sdist&#10;        run: |&#10;          python -m pip install --upgrade build&#10;          python -m build --sdist --outdir dist&#10;      - uses: actions/upload-artifact@v4&#10;        with:&#10;          name: sdist&#10;          path: dist/*.tar.gz&#10;&#10;  publish:&#10;    needs: [build-wheels, build-sdist]&#10;    runs-on: ubuntu-latest&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;      - uses: actions/download-artifact@v4&#10;        with:&#10;          pattern: '*'&#10;          path: dist&#10;          merge-multiple: true&#10;      - name: Publish to PyPI&#10;        uses: pypa/gh-action-pypi-publish@release/v1&#10;        with:&#10;          user: __token__&#10;          password: ${{ secrets.PYPI_API_TOKEN }}&#10;          packages_dir: dist&#10;          skip_existing: true" />
+              <option name="updatedContent" value="name: Build and Publish&#10;&#10;on:&#10;  release:&#10;    types: [published]&#10;  workflow_dispatch:&#10;&#10;jobs:&#10;  build-wheels:&#10;    name: Build wheels on ${{ matrix.os }}&#10;    runs-on: ${{ matrix.os }}&#10;    strategy:&#10;      matrix:&#10;        os: [ubuntu-latest, macos-latest, windows-latest]&#10;        include:&#10;          - os: ubuntu-latest&#10;            cflags: &quot;-O3&quot;&#10;          - os: macos-latest&#10;            cflags: &quot;-O3&quot;&#10;          - os: windows-latest&#10;            cflags: &quot;/O2&quot;&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;        with:&#10;          fetch-depth: 0  # Needed for setuptools-scm to get proper version&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: '3.x'&#10;      - name: Install cibuildwheel&#10;        run: |&#10;          python -m pip install --upgrade pip&#10;          pip install cibuildwheel&#10;      - name: Build wheels&#10;        env:&#10;          CIBW_SKIP: cp36-* cp37-* cp38-* cp39-*&#10;          CIBW_ENVIRONMENT: &quot;CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}'&quot;&#10;        run: cibuildwheel --output-dir dist&#10;      - uses: actions/upload-artifact@v4&#10;        with:&#10;          name: wheels-${{ matrix.os }}&#10;          path: dist/*.whl&#10;&#10;  build-sdist:&#10;    runs-on: ubuntu-latest&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;        with:&#10;          fetch-depth: 0  # Needed for setuptools-scm&#10;      - uses: actions/setup-python@v5&#10;        with:&#10;          python-version: '3.x'&#10;      - name: Build sdist&#10;        run: |&#10;          python -m pip install --upgrade build&#10;          python -m build --sdist --outdir dist&#10;      - uses: actions/upload-artifact@v4&#10;        with:&#10;          name: sdist&#10;          path: dist/*.tar.gz&#10;&#10;  publish:&#10;    needs: [build-wheels, build-sdist]&#10;    runs-on: ubuntu-latest&#10;    environment: &#10;      name: pypi&#10;      url: https://pypi.org/p/prefixtrie&#10;    permissions:&#10;      id-token: write  # For trusted publishing&#10;    steps:&#10;      - uses: actions/checkout@v4&#10;      - uses: actions/download-artifact@v4&#10;        with:&#10;          pattern: '*'&#10;          path: dist&#10;          merge-multiple: true&#10;      - name: Publish to PyPI&#10;        uses: pypa/gh-action-pypi-publish@release/v1&#10;        with:&#10;          packages-dir: dist&#10;          skip-existing: true" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/.pre-commit-config.yaml">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/.pre-commit-config.yaml" />
             </PendingDiffInfo>
           </value>
         </entry>
@@ -22,22 +40,6 @@
           <value>
             <PendingDiffInfo>
               <option name="filePath" value="$PROJECT_DIR$/CONTRIBUTING.md" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
-        <entry key="$PROJECT_DIR$/LICENSE">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/LICENSE" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
-        <entry key="$PROJECT_DIR$/MANIFEST.in">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/MANIFEST.in" />
-              <option name="originalContent" value="include src/prefixtrie/*.pyx&#10;include src/prefixtrie/*.cpp&#10;include LICENSE&#10;include README.md&#10;include pyproject.toml&#10;recursive-include src/prefixtrie *.pyx *.cpp&#10;global-exclude *.pyc&#10;global-exclude __pycache__&#10;global-exclude *.so&#10;global-exclude *.pyd" />
-              <option name="updatedContent" value="include src/prefixtrie/*.pyx&#10;include src/prefixtrie/*.cpp&#10;include LICENSE&#10;include README.md&#10;include pyproject.toml&#10;recursive-include src/prefixtrie *.pyx *.cpp&#10;global-exclude *.pyc&#10;global-exclude __pycache__&#10;global-exclude *.so&#10;global-exclude *.pyd" />
             </PendingDiffInfo>
           </value>
         </entry>
@@ -70,8 +72,7 @@
           <value>
             <PendingDiffInfo>
               <option name="filePath" value="$PROJECT_DIR$/pyproject.toml" />
-              <option name="originalContent" value="[project]&#10;name = &quot;prefixtrie&quot;&#10;version = &quot;0.1.0&quot;&#10;description = &quot;A cython implementation of a read-only prefix trie data structure.&quot;&#10;requires-python = &quot;&gt;=3.10&quot;&#10;dependencies = []&#10;&#10;[build-system]&#10;requires = [&quot;setuptools&gt;=80&quot;, &quot;wheel&quot;, &quot;cython&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[tool.setuptools]&#10;package-dir = {&quot;&quot; = &quot;src&quot;}&#10;ext-modules = [{name = &quot;prefixtrie._impl&quot;, sources = [&quot;src/prefixtrie/_impl.pyx&quot;], language = &quot;c++&quot;, extra-compile-args = [&quot;-O3&quot;], extra-link-args = [&quot;-O3&quot;]}]&#10;&#10;[tool.setuptools.packages.find]&#10;where = [&quot;src&quot;]&#10;&#10;[dependency-groups]&#10;dev = [&#10;    &quot;cython&quot;,&#10;]&#10;test = [&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;]&#10;&#10;[tool.pytest.ini_options]&#10;minversion = &quot;8.0&quot;&#10;testpaths = [&quot;test&quot;]&#10;python_files = [&quot;test*.py&quot;, &quot;*test.py&quot;]&#10;addopts = [&quot;-ra&quot;, &quot;--strict-config&quot;, &quot;--strict-markers&quot;, &quot;--maxfail=1&quot;]&#10;&#10;[tool.setuptools_scm]&#10;write_to = &quot;src/prefixtrie/_version.py&quot;&#10;fallback_version = &quot;0.1.0&quot;" />
-              <option name="updatedContent" value="[project]&#10;name = &quot;prefixtrie&quot;&#10;dynamic = [&quot;version&quot;]&#10;description = &quot;A cython implementation of a read-only prefix trie data structure.&quot;&#10;readme = {file = &quot;README.md&quot;, content-type = &quot;text/markdown&quot;}&#10;requires-python = &quot;&gt;=3.10&quot;&#10;license = {text = &quot;MIT&quot;}&#10;authors = [&#10;    {name = &quot;Austin Voecks&quot;, email = &quot;your-email@example.com&quot;},&#10;]&#10;maintainers = [&#10;    {name = &quot;Austin Voecks&quot;, email = &quot;your-email@example.com&quot;},&#10;]&#10;keywords = [&quot;trie&quot;, &quot;prefix-trie&quot;, &quot;fuzzy-matching&quot;, &quot;string-matching&quot;, &quot;bioinformatics&quot;]&#10;classifiers = [&#10;    &quot;Development Status :: 4 - Beta&quot;,&#10;    &quot;Intended Audience :: Developers&quot;,&#10;    &quot;Intended Audience :: Science/Research&quot;,&#10;    &quot;License :: OSI Approved :: MIT License&quot;,&#10;    &quot;Operating System :: OS Independent&quot;,&#10;    &quot;Programming Language :: Python :: 3&quot;,&#10;    &quot;Programming Language :: Python :: 3.10&quot;,&#10;    &quot;Programming Language :: Python :: 3.11&quot;,&#10;    &quot;Programming Language :: Python :: 3.12&quot;,&#10;    &quot;Programming Language :: Python :: 3.13&quot;,&#10;    &quot;Programming Language :: Cython&quot;,&#10;    &quot;Programming Language :: C++&quot;,&#10;    &quot;Topic :: Scientific/Engineering :: Bio-Informatics&quot;,&#10;    &quot;Topic :: Software Development :: Libraries :: Python Modules&quot;,&#10;    &quot;Topic :: Text Processing&quot;,&#10;]&#10;dependencies = []&#10;&#10;[project.urls]&#10;Homepage = &quot;https://github.com/austinv11/PrefixTrie&quot;&#10;Repository = &quot;https://github.com/austinv11/PrefixTrie&quot;&#10;Documentation = &quot;https://github.com/austinv11/PrefixTrie#readme&quot;&#10;&quot;Bug Tracker&quot; = &quot;https://github.com/austinv11/PrefixTrie/issues&quot;&#10;Changelog = &quot;https://github.com/austinv11/PrefixTrie/releases&quot;&#10;&#10;[build-system]&#10;requires = [&quot;setuptools&gt;=80&quot;, &quot;wheel&quot;, &quot;cython&gt;=3.0&quot;, &quot;setuptools-scm&gt;=8.0&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[tool.setuptools]&#10;package-dir = {&quot;&quot; = &quot;src&quot;}&#10;ext-modules = [{name = &quot;prefixtrie._impl&quot;, sources = [&quot;src/prefixtrie/_impl.pyx&quot;], language = &quot;c++&quot;, extra-compile-args = [&quot;-O3&quot;, &quot;-std=c++11&quot;], extra-link-args = [&quot;-O3&quot;]}]&#10;include-package-data = true&#10;zip-safe = false&#10;&#10;[tool.setuptools.packages.find]&#10;where = [&quot;src&quot;]&#10;&#10;[dependency-groups]&#10;dev = [&#10;    &quot;cython&quot;,&#10;]&#10;test = [&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;]&#10;&#10;[tool.pytest.ini_options]&#10;minversion = &quot;8.0&quot;&#10;testpaths = [&quot;test&quot;]&#10;python_files = [&quot;test*.py&quot;, &quot;*test.py&quot;]&#10;addopts = [&quot;-ra&quot;, &quot;--strict-config&quot;, &quot;--strict-markers&quot;, &quot;--maxfail=1&quot;]&#10;&#10;[tool.setuptools_scm]&#10;write_to = &quot;src/prefixtrie/_version.py&quot;&#10;fallback_version = &quot;0.1.0&quot;" />
+              <option name="updatedContent" value="&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;" />
             </PendingDiffInfo>
           </value>
         </entry>
@@ -79,15 +80,6 @@
           <value>
             <PendingDiffInfo>
               <option name="filePath" value="$PROJECT_DIR$/setup.cfg" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
-        <entry key="$PROJECT_DIR$/src/prefixtrie/__init__.py">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/src/prefixtrie/__init__.py" />
-              <option name="originalContent" value="from ._impl import cPrefixTrie as PrefixTrie&#10;&#10;try:&#10;    from ._version import __version__&#10;except ImportError:&#10;    # Fallback version if _version.py doesn't exist yet&#10;    __version__ = &quot;0.1.0&quot;&#10;&#10;__all__ = [&quot;PrefixTrie&quot;]&#10;" />
-              <option name="updatedContent" value="from ._impl import cPrefixTrie as PrefixTrie&#10;&#10;try:&#10;    from ._version import __version__&#10;except ImportError:&#10;    # Fallback version if _version.py doesn't exist yet&#10;    __version__ = &quot;0.1.0&quot;&#10;&#10;__all__ = [&quot;PrefixTrie&quot;]" />
             </PendingDiffInfo>
           </value>
         </entry>
