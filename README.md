@@ -11,7 +11,7 @@ Note that this is intentionally kept simple and does not include more advanced o
 Originally, this was meant to only deal with RNA barcode matching. As a result, keep in mind the following:
 
 1. The implementation does not attempt to support non-ASCII characters. It may work in some cases, but I won't make any behavioral guarantees.
-2. We assume that insertion/deletions are rare compared to substitutions, so if you enable indel support, you may get suboptimal results when there are multiple possible matches.
+2. We assume that insertion/deletions are slightly more rare compared to substitutions, so if you enable indel support, you may get suboptimal results when there are multiple possible matches.
 
 
 ## Implementation details in short
@@ -43,7 +43,7 @@ print(trie.search("AG", correction_budget=1))
 
 ## Multiprocessing Support
 
-**New!** PrefixTrie is now pickle-compatible for easy use with multiprocessing:
+PrefixTrie is also pickle-compatible for easy use with multiprocessing:
 
 ```python
 import multiprocessing as mp

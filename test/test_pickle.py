@@ -3,6 +3,7 @@ import multiprocessing as mp
 import tempfile
 import os
 import pytest
+import platform
 import pyximport
 pyximport.install()
 from prefixtrie import PrefixTrie, create_shared_trie, load_shared_trie
@@ -600,8 +601,17 @@ class TestPrefixTrieSharedMemory:
         trie.cleanup_shared_memory()
 
         # Verify shared memory is no longer accessible
-        with pytest.raises(RuntimeError):
-            load_shared_trie(shm_name)
+        # On Windows, shared memory might still be accessible after unlink()
+        # due to platform differences in shared memory behavior
+        if platform.system() == "Windows":
+            # On Windows, we can't guarantee the shared memory is immediately inaccessible
+            # Just verify that cleanup was called without error
+            assert trie._shared_memory is None
+            assert trie._is_shared_owner is False
+        else:
+            # On Unix/Linux, shared memory should be inaccessible after cleanup
+            with pytest.raises(RuntimeError):
+                load_shared_trie(shm_name)
 
     def test_shared_memory_error_handling(self):
         """Test error handling for shared memory operations"""
