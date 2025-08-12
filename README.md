@@ -1,8 +1,10 @@
 # PrefixTrie
 
+[![PyPI version](https://img.shields.io/pypi/v/prefix_trie.svg)](https://pypi.org/project/prefix_trie/)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/austinv11/PrefixTrie/python-app.yml?branch=master)](https://github.com/austinv11/PrefixTrie/actions)
+[![License](https://img.shields.io/github/license/austinv11/PrefixTrie.svg)](https://github.com/austinv11/PrefixTrie/blob/master/LICENSE)
+
 This is a straightforward, read-only, implementation of a Prefix Trie to perform efficient fuzzy string matches.
-
-
 Note that this is intentionally kept simple and does not include more advanced optimizations (like considering semantic character differences).
 Originally, this was meant to only deal with RNA barcode matching. As a result, keep in mind the following:
 
