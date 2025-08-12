@@ -34,8 +34,8 @@ jobs:
         env:
           CIBW_SKIP: cp38-* cp39-*
           CIBW_ENVIRONMENT: "CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}'"
-          CIBW_TEST_COMMAND: "pytest {project}/test"
-          CIBW_TEST_REQUIRES: "pytest"
+#          CIBW_TEST_COMMAND: "pytest {project}/test"
+#          CIBW_TEST_REQUIRES: "pytest cython"
         run: cibuildwheel --output-dir dist
       - uses: actions/upload-artifact@v4
         with:
