@@ -1,1 +1,10 @@
 include src/prefixtrie/*.pyx
+include src/prefixtrie/*.cpp
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include src/prefixtrie *.pyx *.cpp
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude *.pyd

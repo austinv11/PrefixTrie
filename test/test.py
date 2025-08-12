@@ -853,6 +853,45 @@ class TestPrefixTrieAlgorithmCorrectness:
         assert result in ["abcdef", "abcxyz"]
         assert exact is False
 
+def generate_barcodes(n: int, length: int = 16) -> list[str]:
+    """Generate `n` deterministic barcodes of given length"""
+    bases = "ACGT"
+    barcodes = []
+    for i in range(n):
+        seq = []
+        num = i
+        for _ in range(length):
+            seq.append(bases[num & 3])
+            num >>= 2
+        barcodes.append("".join(seq))
+    return barcodes
+
+
+class TestLargeWhitelist:
+
+    def test_thousands_of_barcodes(self):
+        # Generate 10k deterministic 16bp barcodes
+        barcodes = generate_barcodes(10000)
+        trie = cPrefixTrie(barcodes, allow_indels=True)
+
+        # Spot check a few barcodes for exact match
+        samples = [barcodes[0], barcodes[123], barcodes[9999], barcodes[5000], barcodes[7777]]
+        for bc in samples:
+            result, exact = trie.search(bc)
+            assert result == bc
+            assert exact is True
+
+        # Mutate a high-order position to ensure it is not already in whitelist
+        for idx, pos in [(42, 12), (123, 8), (9999, 15), (5000, 0), (7777, 5)]:
+            original = barcodes[idx]
+            replacement = "A" if original[pos] != "A" else "C"
+            mutated = original[:pos] + replacement + original[pos + 1:]
+            if mutated in barcodes:
+                continue  # Skip if mutated barcode is already in whitelist
+            result, exact = trie.search(mutated, correction_budget=1)
+            assert result == original
+            assert exact is False
+
 
 if __name__ == "__main__":
     # Run a quick smoke test

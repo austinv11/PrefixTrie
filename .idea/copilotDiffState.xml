@@ -3,6 +3,44 @@
   <component name="CopilotDiffPersistence">
     <option name="pendingDiffs">
       <map>
+        <entry key="$PROJECT_DIR$/.gitignore">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/.gitignore" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/CHANGELOG.md">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/CHANGELOG.md" />
+              <option name="updatedContent" value="# Changelog&#10;### Features&#10;- Efficient exact and approximate string matching&#10;- Configurable maximum substitutions&#10;- Optional indel (insertion/deletion) support&#10;- Optimized for read-only use cases&#10;- Aggressive caching for performance&#10;- C++ backend for speed&#10;&#10;[Unreleased]: https://github.com/austinv11/PrefixTrie/compare/v0.1.0...HEAD&#10;[0.1.0]: https://github.com/austinv11/PrefixTrie/releases/tag/v0.1.0" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/CONTRIBUTING.md">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/CONTRIBUTING.md" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/LICENSE">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/LICENSE" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/MANIFEST.in">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/MANIFEST.in" />
+              <option name="originalContent" value="include src/prefixtrie/*.pyx&#10;include src/prefixtrie/*.cpp&#10;include LICENSE&#10;include README.md&#10;include pyproject.toml&#10;recursive-include src/prefixtrie *.pyx *.cpp&#10;global-exclude *.pyc&#10;global-exclude __pycache__&#10;global-exclude *.so&#10;global-exclude *.pyd" />
+              <option name="updatedContent" value="include src/prefixtrie/*.pyx&#10;include src/prefixtrie/*.cpp&#10;include LICENSE&#10;include README.md&#10;include pyproject.toml&#10;recursive-include src/prefixtrie *.pyx *.cpp&#10;global-exclude *.pyc&#10;global-exclude __pycache__&#10;global-exclude *.so&#10;global-exclude *.pyd" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
         <entry key="$PROJECT_DIR$/debug_exact.py">
           <value>
             <PendingDiffInfo>
@@ -25,6 +63,31 @@
               <option name="filePath" value="$PROJECT_DIR$/debug_test.py" />
               <option name="originalContent" value="&#10;&#10;" />
               <option name="updatedContent" value="import pyximport&#10;pyximport.install()&#10;from prefixtrie._impl import cPrefixTrie&#10;&#10;# Debug the failing test case&#10;print(&quot;=== Debugging insertion/deletion behavior ===&quot;)&#10;&#10;entries = [&quot;hello&quot;, &quot;help&quot;, &quot;helicopter&quot;]&#10;trie = cPrefixTrie(entries, allow_indels=True)&#10;&#10;# Test the failing case&#10;query = &quot;helo&quot;&#10;result, exact = trie.search(query, correction_budget=1)&#10;print(f&quot;Query: '{query}' -&gt; Result: '{result}', Exact: {exact}&quot;)&#10;print(f&quot;Expected: 'hello' (insertion of 'l')&quot;)&#10;print(f&quot;Actual result needs: {len(query)} -&gt; {len(result)} chars&quot;)&#10;&#10;# Let's test what happens with different queries&#10;test_cases = [&#10;    (&quot;helo&quot;, 1),    # missing 'l' - should be &quot;hello&quot;&#10;    (&quot;hel&quot;, 1),     # missing 'p' - should be &quot;help&quot;&#10;    (&quot;helllo&quot;, 1),  # extra 'l' - should be &quot;hello&quot;&#10;    (&quot;helpx&quot;, 1),   # extra 'x' - should be &quot;help&quot;&#10;]&#10;&#10;print(&quot;\n=== Testing various edit scenarios ===&quot;)&#10;for query, budget in test_cases:&#10;    result, exact = trie.search(query, correction_budget=budget)&#10;    print(f&quot;'{query}' (budget={budget}) -&gt; '{result}' (exact={exact})&quot;)&#10;&#10;# Test with each entry individually to see algorithm preference&#10;print(&quot;\n=== Testing with individual entries ===&quot;)&#10;for entry in entries:&#10;    single_trie = cPrefixTrie([entry], allow_indels=True)&#10;    result, exact = single_trie.search(&quot;helo&quot;, correction_budget=1)&#10;    print(f&quot;Single entry '{entry}': 'helo' -&gt; '{result}' (exact={exact})&quot;)&#10;&#10;# Test edit distances manually&#10;print(&quot;\n=== Manual edit distance analysis ===&quot;)&#10;print(&quot;'helo' -&gt; 'hello': 1 insertion (insert 'l' at position 2)&quot;)&#10;print(&quot;'helo' -&gt; 'help': 1 substitution ('o' -&gt; 'p') + 1 deletion (remove 'o')&quot;)&#10;print(&quot;Wait, that's wrong. Let me recalculate:&quot;)&#10;print(&quot;'helo' -&gt; 'help': actually needs 2 edits (substitute 'o'-&gt;'p', then what?)&quot;)&#10;print()&#10;print(&quot;Let's check character by character:&quot;)&#10;print(&quot;helo -&gt; hello: h=h, e=e, l=l, o-&gt;l (substitute), +o (insert) = 2 edits&quot;)&#10;print(&quot;helo -&gt; help:  h=h, e=e, l=l, o-&gt;p (substitute) = 1 edit&quot;)&#10;print()&#10;print(&quot;Actually, I think 'help' IS the correct answer for 'helo' with 1 edit!&quot;)&#10;&#10;# Debug another failing case&#10;print(&quot;\n=== Debugging 'hell' case ===&quot;)&#10;query = &quot;hell&quot;&#10;result, exact = trie.search(query, correction_budget=1)&#10;print(f&quot;Query: '{query}' -&gt; Result: '{result}', Exact: {exact}&quot;)&#10;&#10;print(&quot;\nEdit distance analysis:&quot;)&#10;print(&quot;'hell' -&gt; 'hello': insert 'o' at end = 1 edit&quot;)&#10;print(&quot;'hell' -&gt; 'help': substitute 'l'-&gt;'p' at position 3 = 1 edit&quot;)&#10;print(&quot;Both require exactly 1 edit, so either could be valid!&quot;)&#10;&#10;# Debug the &quot;hel&quot; case&#10;print(&quot;\n=== Debugging 'hel' case ===&quot;)&#10;query = &quot;hel&quot;&#10;result, exact = trie.search(query, correction_budget=1)&#10;print(f&quot;Query: '{query}' -&gt; Result: '{result}', Exact: {exact}&quot;)&#10;&#10;print(&quot;\nEdit distance analysis:&quot;)&#10;print(&quot;'hel' -&gt; 'hello': insert 'l' at pos 3, insert 'o' at pos 4 = 2 edits&quot;)&#10;print(&quot;'hel' -&gt; 'help': insert 'p' at pos 3 = 1 edit&quot;)&#10;print(&quot;'hel' -&gt; 'helicopter': insert many chars = many edits&quot;)&#10;&#10;# Test with individual entries&#10;print(&quot;\n=== Testing 'hel' with individual entries ===&quot;)&#10;for entry in entries:&#10;    single_trie = cPrefixTrie([entry], allow_indels=True)&#10;    result, exact = single_trie.search(&quot;hel&quot;, correction_budget=1)&#10;    print(f&quot;Single entry '{entry}': 'hel' -&gt; '{result}' (exact={exact})&quot;)&#10;&#10;# Test what happens with budget 2&#10;result, exact = trie.search(&quot;hel&quot;, correction_budget=2)&#10;print(f&quot;\nWith budget 2: 'hel' -&gt; '{result}' (exact={exact})&quot;)" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/pyproject.toml">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/pyproject.toml" />
+              <option name="originalContent" value="[project]&#10;name = &quot;prefixtrie&quot;&#10;version = &quot;0.1.0&quot;&#10;description = &quot;A cython implementation of a read-only prefix trie data structure.&quot;&#10;requires-python = &quot;&gt;=3.10&quot;&#10;dependencies = []&#10;&#10;[build-system]&#10;requires = [&quot;setuptools&gt;=80&quot;, &quot;wheel&quot;, &quot;cython&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[tool.setuptools]&#10;package-dir = {&quot;&quot; = &quot;src&quot;}&#10;ext-modules = [{name = &quot;prefixtrie._impl&quot;, sources = [&quot;src/prefixtrie/_impl.pyx&quot;], language = &quot;c++&quot;, extra-compile-args = [&quot;-O3&quot;], extra-link-args = [&quot;-O3&quot;]}]&#10;&#10;[tool.setuptools.packages.find]&#10;where = [&quot;src&quot;]&#10;&#10;[dependency-groups]&#10;dev = [&#10;    &quot;cython&quot;,&#10;]&#10;test = [&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;]&#10;&#10;[tool.pytest.ini_options]&#10;minversion = &quot;8.0&quot;&#10;testpaths = [&quot;test&quot;]&#10;python_files = [&quot;test*.py&quot;, &quot;*test.py&quot;]&#10;addopts = [&quot;-ra&quot;, &quot;--strict-config&quot;, &quot;--strict-markers&quot;, &quot;--maxfail=1&quot;]&#10;&#10;[tool.setuptools_scm]&#10;write_to = &quot;src/prefixtrie/_version.py&quot;&#10;fallback_version = &quot;0.1.0&quot;" />
+              <option name="updatedContent" value="[project]&#10;name = &quot;prefixtrie&quot;&#10;dynamic = [&quot;version&quot;]&#10;description = &quot;A cython implementation of a read-only prefix trie data structure.&quot;&#10;readme = {file = &quot;README.md&quot;, content-type = &quot;text/markdown&quot;}&#10;requires-python = &quot;&gt;=3.10&quot;&#10;license = {text = &quot;MIT&quot;}&#10;authors = [&#10;    {name = &quot;Austin Voecks&quot;, email = &quot;your-email@example.com&quot;},&#10;]&#10;maintainers = [&#10;    {name = &quot;Austin Voecks&quot;, email = &quot;your-email@example.com&quot;},&#10;]&#10;keywords = [&quot;trie&quot;, &quot;prefix-trie&quot;, &quot;fuzzy-matching&quot;, &quot;string-matching&quot;, &quot;bioinformatics&quot;]&#10;classifiers = [&#10;    &quot;Development Status :: 4 - Beta&quot;,&#10;    &quot;Intended Audience :: Developers&quot;,&#10;    &quot;Intended Audience :: Science/Research&quot;,&#10;    &quot;License :: OSI Approved :: MIT License&quot;,&#10;    &quot;Operating System :: OS Independent&quot;,&#10;    &quot;Programming Language :: Python :: 3&quot;,&#10;    &quot;Programming Language :: Python :: 3.10&quot;,&#10;    &quot;Programming Language :: Python :: 3.11&quot;,&#10;    &quot;Programming Language :: Python :: 3.12&quot;,&#10;    &quot;Programming Language :: Python :: 3.13&quot;,&#10;    &quot;Programming Language :: Cython&quot;,&#10;    &quot;Programming Language :: C++&quot;,&#10;    &quot;Topic :: Scientific/Engineering :: Bio-Informatics&quot;,&#10;    &quot;Topic :: Software Development :: Libraries :: Python Modules&quot;,&#10;    &quot;Topic :: Text Processing&quot;,&#10;]&#10;dependencies = []&#10;&#10;[project.urls]&#10;Homepage = &quot;https://github.com/austinv11/PrefixTrie&quot;&#10;Repository = &quot;https://github.com/austinv11/PrefixTrie&quot;&#10;Documentation = &quot;https://github.com/austinv11/PrefixTrie#readme&quot;&#10;&quot;Bug Tracker&quot; = &quot;https://github.com/austinv11/PrefixTrie/issues&quot;&#10;Changelog = &quot;https://github.com/austinv11/PrefixTrie/releases&quot;&#10;&#10;[build-system]&#10;requires = [&quot;setuptools&gt;=80&quot;, &quot;wheel&quot;, &quot;cython&gt;=3.0&quot;, &quot;setuptools-scm&gt;=8.0&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[tool.setuptools]&#10;package-dir = {&quot;&quot; = &quot;src&quot;}&#10;ext-modules = [{name = &quot;prefixtrie._impl&quot;, sources = [&quot;src/prefixtrie/_impl.pyx&quot;], language = &quot;c++&quot;, extra-compile-args = [&quot;-O3&quot;, &quot;-std=c++11&quot;], extra-link-args = [&quot;-O3&quot;]}]&#10;include-package-data = true&#10;zip-safe = false&#10;&#10;[tool.setuptools.packages.find]&#10;where = [&quot;src&quot;]&#10;&#10;[dependency-groups]&#10;dev = [&#10;    &quot;cython&quot;,&#10;]&#10;test = [&#10;    &quot;pytest&gt;=8.4.1&quot;,&#10;]&#10;&#10;[tool.pytest.ini_options]&#10;minversion = &quot;8.0&quot;&#10;testpaths = [&quot;test&quot;]&#10;python_files = [&quot;test*.py&quot;, &quot;*test.py&quot;]&#10;addopts = [&quot;-ra&quot;, &quot;--strict-config&quot;, &quot;--strict-markers&quot;, &quot;--maxfail=1&quot;]&#10;&#10;[tool.setuptools_scm]&#10;write_to = &quot;src/prefixtrie/_version.py&quot;&#10;fallback_version = &quot;0.1.0&quot;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/setup.cfg">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/setup.cfg" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/prefixtrie/__init__.py">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/prefixtrie/__init__.py" />
+              <option name="originalContent" value="from ._impl import cPrefixTrie as PrefixTrie&#10;&#10;try:&#10;    from ._version import __version__&#10;except ImportError:&#10;    # Fallback version if _version.py doesn't exist yet&#10;    __version__ = &quot;0.1.0&quot;&#10;&#10;__all__ = [&quot;PrefixTrie&quot;]&#10;" />
+              <option name="updatedContent" value="from ._impl import cPrefixTrie as PrefixTrie&#10;&#10;try:&#10;    from ._version import __version__&#10;except ImportError:&#10;    # Fallback version if _version.py doesn't exist yet&#10;    __version__ = &quot;0.1.0&quot;&#10;&#10;__all__ = [&quot;PrefixTrie&quot;]" />
             </PendingDiffInfo>
           </value>
         </entry>
