@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "A cython implementation of a read-only prefix trie data structure."
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Austin Varela", email = "austinv11@gmail.com"},
 ]
@@ -16,7 +16,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -55,6 +54,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O3", "-std=c++11"], extra-link-args = ["-O3"]}]
 include-package-data = true
 zip-safe = false
 
@@ -66,3 +66,8 @@ minversion = "8.0"
 testpaths = ["test"]
 python_files = ["test*.py", "*test.py"]
 addopts = ["-ra", "--strict-config", "--strict-markers", "--maxfail=1"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+write_to = "src/prefixtrie/_version.py"

@@ -32,7 +32,7 @@ jobs:
           pip install cibuildwheel
       - name: Build wheels
         env:
-          CIBW_SKIP: cp36-* cp37-* cp38-* cp39-*
+          CIBW_SKIP: cp38-* cp39-*
           CIBW_ENVIRONMENT: "CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}'"
           CIBW_TEST_COMMAND: "pytest {project}/test"
           CIBW_TEST_REQUIRES: "pytest"
