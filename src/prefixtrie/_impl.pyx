@@ -502,22 +502,23 @@ cdef class cPrefixTrie:
         cache_insert_if_better(st, node_key, result)
         return result
 
-    cdef void _collect_nodes(self, TrieNode* node, list nodes):
+    cdef void _collect_nodes(self, TrieNode* node, vector[TrieNode*]* nodes) noexcept nogil:
         if node == NULL:
             return
-        nodes.append(<uintptr_t>node)
+        deref(nodes).push_back(node)
         cdef size_t i, m = n_children(node)
         for i in range(m):
             self._collect_nodes(child_at(node, i), nodes)
 
     cpdef bytes to_bytes(self):
         from struct import pack
-        cdef list nodes = []
-        self._collect_nodes(self.root, nodes)
+        cdef vector[TrieNode*] nodes_vec
+        with nogil:
+            self._collect_nodes(self.root, &nodes_vec)
         cdef dict node_indices = {}
-        cdef Py_ssize_t i, m = len(nodes)
+        cdef Py_ssize_t i, m = nodes_vec.size()
         for i in range(m):
-            node_indices[nodes[i]] = i
+            node_indices[<uintptr_t> nodes_vec[i]] = i
 
         cdef bytearray out = bytearray()
         out.extend(pack('<B', self.allow_indels))
@@ -530,7 +531,7 @@ cdef class cPrefixTrie:
         cdef int j, idx_child, child_idx, skip_idx, n_child
         cdef size_t collapsed_len, leaf_len
         for i in range(m):
-            node = <TrieNode*> <uintptr_t> nodes[i]
+            node = nodes_vec[i]
             collapsed_len = node.collapsed_len if node.collapsed != NULL else 0
             leaf_len = strlen(node.leaf_value) if node.leaf_value != NULL else 0
             skip_idx = -1
