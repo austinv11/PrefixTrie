@@ -4,6 +4,10 @@ import tempfile
 import os
 import pytest
 import platform
+import io
+import copy
+import gc
+import weakref
 import pyximport
 pyximport.install()
 from prefixtrie import PrefixTrie, create_shared_trie, load_shared_trie
@@ -94,6 +98,33 @@ def shared_memory_batch_worker(args):
         result = trie.search(query)
         results.append(result)
     return results
+
+
+# Module-level class for pickle testing (needs to be at module level to be picklable)
+class TrieWrapper:
+    """Wrapper class for testing pickle interaction with custom objects containing tries"""
+    def __init__(self, trie):
+        self.trie = trie
+        self.metadata = {"created_by": "test", "version": 1.0}
+        self.search_count = 0
+
+    def search(self, query, **kwargs):
+        self.search_count += 1
+        return self.trie.search(query, **kwargs)
+
+    def __getstate__(self):
+        # Custom pickle state
+        return {
+            'trie': self.trie,
+            'metadata': self.metadata,
+            'search_count': self.search_count
+        }
+
+    def __setstate__(self, state):
+        # Custom unpickle state
+        self.trie = state['trie']
+        self.metadata = state['metadata']
+        self.search_count = state['search_count']
 
 
 class TestPrefixTriePickle:
@@ -208,30 +239,258 @@ class TestPrefixTriePickle:
         finally:
             os.unlink(filename)
 
-    def test_pickle_state_methods(self):
-        """Test __getstate__ and __setstate__ methods directly"""
-        entries = ["state", "methods", "test"]
+    def test_pickle_state_consistency(self):
+        """Test that all internal state is properly preserved during pickle"""
+        entries = ["test", "testing", "tester", "tea", "team"]
         trie = PrefixTrie(entries, allow_indels=True)
 
-        # Test __getstate__
-        state = trie.__getstate__()
-        assert 'entries' in state
-        assert 'allow_indels' in state
-        assert state['entries'] == entries
-        assert state['allow_indels'] is True
+        # Get initial state
+        initial_len = len(trie)
+        initial_allow_indels = trie.allow_indels
+        initial_entries = list(trie)
 
-        # Test __setstate__
-        new_trie = PrefixTrie.__new__(PrefixTrie)  # Create without calling __init__
-        new_trie.__setstate__(state)
-
-        # Verify the new trie works
-        assert len(new_trie) == len(trie)
-        assert new_trie.allow_indels == trie.allow_indels
+        # Test various search operations before pickling
+        search_results_before = []
         for entry in entries:
-            result, exact = new_trie.search(entry)
-            assert result == entry
-            assert exact is True
+            result = trie.search(entry)
+            search_results_before.append(result)
 
+        # Pickle and unpickle
+        pickled_data = pickle.dumps(trie)
+        restored_trie = pickle.loads(pickled_data)
+
+        # Verify state consistency
+        assert len(restored_trie) == initial_len
+        assert restored_trie.allow_indels == initial_allow_indels
+        assert set(restored_trie) == set(initial_entries)
+
+        # Test that search results are identical
+        search_results_after = []
+        for entry in entries:
+            result = restored_trie.search(entry)
+            search_results_after.append(result)
+
+        assert search_results_before == search_results_after
+
+    def test_pickle_memory_efficiency(self):
+        """Test that pickle doesn't create memory leaks or excessive objects"""
+        entries = [f"mem_test_{i}" for i in range(100)]
+        trie = PrefixTrie(entries, allow_indels=False)
+
+        # Track object count before pickle operations
+        gc.collect()
+        initial_objects = len(gc.get_objects())
+
+        # Perform multiple pickle/unpickle cycles
+        for _ in range(10):
+            pickled_data = pickle.dumps(trie)
+            restored_trie = pickle.loads(pickled_data)
+            # Verify functionality
+            assert len(restored_trie) == len(trie)
+            del restored_trie
+
+        # Check for memory leaks
+        gc.collect()
+        final_objects = len(gc.get_objects())
+
+        # Allow some tolerance for Python's object management
+        assert final_objects - initial_objects < 50
+
+    def test_pickle_serialization_formats(self):
+        """Test pickle with different serialization formats and compression"""
+        entries = ["format", "test", "compression", "serialization"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Test different pickle protocols
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            # Test binary format
+            binary_data = pickle.dumps(trie, protocol=protocol)
+            restored_binary = pickle.loads(binary_data)
+
+            assert len(restored_binary) == len(trie)
+            assert restored_binary.allow_indels == trie.allow_indels
+
+            # Test with BytesIO
+            buffer = io.BytesIO()
+            pickle.dump(trie, buffer, protocol=protocol)
+            buffer.seek(0)
+            restored_buffer = pickle.load(buffer)
+
+            assert len(restored_buffer) == len(trie)
+            assert restored_buffer.allow_indels == trie.allow_indels
+
+    def test_pickle_circular_references(self):
+        """Test pickle behavior with circular references (if any)"""
+        entries = ["circular", "reference", "test"]
+        trie = PrefixTrie(entries, allow_indels=False)
+
+        # Create a container with circular reference
+        container = {"trie": trie, "self": None}
+        container["self"] = container
+        container["trie_copy"] = trie  # Same trie referenced twice
+
+        # Should be able to pickle container with trie
+        pickled_data = pickle.dumps(container)
+        restored_container = pickle.loads(pickled_data)
+
+        # Verify the trie works in the restored container
+        assert restored_container["self"] is restored_container
+        assert len(restored_container["trie"]) == len(trie)
+        assert len(restored_container["trie_copy"]) == len(trie)
+
+        # Both trie references should work
+        result, exact = restored_container["trie"].search("circular")
+        assert result == "circular" and exact is True
+
+        result, exact = restored_container["trie_copy"].search("reference")
+        assert result == "reference" and exact is True
+
+    def test_pickle_with_custom_objects(self):
+        """Test pickle interaction with custom objects containing tries"""
+        entries = ["custom", "object", "wrapper"]
+
+        # Use the module-level TrieWrapper class (defined at the top of the file)
+        trie = PrefixTrie(entries, allow_indels=True)
+        wrapper = TrieWrapper(trie)
+
+        # Use the wrapper
+        wrapper.search("custom")
+        wrapper.search("object")
+        initial_count = wrapper.search_count
+
+        # Pickle and unpickle
+        pickled_data = pickle.dumps(wrapper)
+        restored_wrapper = pickle.loads(pickled_data)
+
+        # Verify wrapper state
+        assert restored_wrapper.search_count == initial_count
+        assert restored_wrapper.metadata == wrapper.metadata
+
+        # Verify trie functionality
+        result, exact = restored_wrapper.search("wrapper")
+        assert result == "wrapper" and exact is True
+        assert restored_wrapper.search_count == initial_count + 1
+
+    def test_pickle_error_handling(self):
+        """Test pickle error handling and recovery"""
+        entries = ["error", "handling", "test"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Test with corrupted pickle data
+        valid_pickled_data = pickle.dumps(trie)
+
+        # Corrupt the data
+        corrupted_data = valid_pickled_data[:-10] + b"corrupted"
+
+        with pytest.raises((pickle.PickleError, EOFError, ValueError)):
+            pickle.loads(corrupted_data)
+
+        # Test with truncated data
+        truncated_data = valid_pickled_data[:len(valid_pickled_data)//2]
+
+        with pytest.raises((pickle.PickleError, EOFError)):
+            pickle.loads(truncated_data)
+
+        # Test that original trie still works after failed unpickling attempts
+        result, exact = trie.search("error")
+        assert result == "error" and exact is True
+
+    def test_pickle_version_compatibility(self):
+        """Test pickle data compatibility across versions"""
+        entries = ["version", "compatibility", "test"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Create pickle data with different protocols
+        pickle_data_by_protocol = {}
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            pickle_data_by_protocol[protocol] = pickle.dumps(trie, protocol=protocol)
+
+        # Verify all protocol versions can be loaded
+        for protocol, data in pickle_data_by_protocol.items():
+            restored_trie = pickle.loads(data)
+            assert len(restored_trie) == len(trie)
+            assert restored_trie.allow_indels == trie.allow_indels
+
+            # Test functionality
+            for entry in entries:
+                result, exact = restored_trie.search(entry)
+                assert result == entry and exact is True
+
+    def test_pickle_thread_safety_simulation(self):
+        """Test pickle in scenarios that simulate thread safety concerns"""
+        entries = ["thread", "safety", "simulation"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Simulate concurrent pickle operations
+        pickled_copies = []
+        for i in range(10):
+            # Create multiple pickled copies
+            pickled_data = pickle.dumps(trie)
+            pickled_copies.append(pickled_data)
+
+        # Restore all copies and verify they work independently
+        restored_tries = []
+        for pickled_data in pickled_copies:
+            restored_trie = pickle.loads(pickled_data)
+            restored_tries.append(restored_trie)
+
+        # Verify all restored tries work correctly
+        for restored_trie in restored_tries:
+            assert len(restored_trie) == len(trie)
+            for entry in entries:
+                result, exact = restored_trie.search(entry)
+                assert result == entry and exact is True
+
+    def test_pickle_with_deepcopy(self):
+        """Test interaction between pickle and deepcopy"""
+        entries = ["deepcopy", "interaction", "test"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Test deepcopy
+        copied_trie = copy.deepcopy(trie)
+        assert len(copied_trie) == len(trie)
+
+        # Test pickle of deepcopied trie
+        pickled_copy = pickle.dumps(copied_trie)
+        restored_copy = pickle.loads(pickled_copy)
+
+        # Verify all versions work
+        for test_trie in [trie, copied_trie, restored_copy]:
+            for entry in entries:
+                result, exact = test_trie.search(entry)
+                assert result == entry and exact is True
+
+    def test_pickle_performance_large_data(self):
+        """Test pickle performance with large data sets"""
+        # Create a large trie
+        entries = [f"performance_test_entry_{i:06d}" for i in range(1000)]
+        trie = PrefixTrie(entries, allow_indels=False)
+
+        # Measure pickle performance
+        import time
+        start_time = time.time()
+        pickled_data = pickle.dumps(trie)
+        pickle_time = time.time() - start_time
+
+        # Measure unpickle performance
+        start_time = time.time()
+        restored_trie = pickle.loads(pickled_data)
+        unpickle_time = time.time() - start_time
+
+        # Verify correctness
+        assert len(restored_trie) == len(trie)
+
+        # Test a few random entries
+        test_indices = [0, 100, 500, 999]
+        for i in test_indices:
+            entry = entries[i]
+            result, exact = restored_trie.search(entry)
+            assert result == entry and exact is True
+
+        # Basic performance assertions (these are quite lenient)
+        assert pickle_time < 10.0  # Should pickle in under 10 seconds
+        assert unpickle_time < 10.0  # Should unpickle in under 10 seconds
+        assert len(pickled_data) > 1000  # Should have substantial size
 
 class TestPrefixTrieMultiprocessing:
     """Test multiprocessing compatibility of PrefixTrie"""

@@ -4,11 +4,13 @@
 from libc.stdlib cimport malloc, free
 from libc.stddef cimport size_t
 from libc.string cimport strcpy, strlen, memcpy, strncmp, memset
+from libc.stdint cimport uintptr_t
 from libcpp.unordered_map cimport unordered_map
 from libcpp.utility cimport pair
 from libcpp.vector cimport vector
 from cython.operator cimport dereference as deref, preincrement as preinc
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize, PyUnicode_FromString
+from cpython.bytes cimport PyBytes_FromStringAndSize
 import cython
 
 # -----------------------------
@@ -162,15 +164,16 @@ cdef inline bint cache_insert_if_better(CacheState* st, Key key, SearchResult in
             return False
 
 
-cdef void _traverse(TrieNode* n, list entries):
-    if n is NULL:
+cdef void _collect_entries(TrieNode* n, vector[Str]* entries) noexcept nogil:
+    """Collect pointers to all leaf strings in the trie."""
+    if n == NULL:
         return
-    cdef int cn = n_children(n)
     if has_complete(n):
-        entries.append(c_str_to_py_str(n.leaf_value))
-    if cn > 0:
-        for i in range(cn):
-            _traverse(child_at(n, i), entries)
+        deref(entries).push_back(n.leaf_value)
+    cdef int cn = n_children(n)
+    cdef int i
+    for i in range(cn):
+        _collect_entries(child_at(n, i), entries)
 
 # -----------------------------
 # Trie object (only search() exposed to Python)
@@ -214,13 +217,15 @@ cdef class cPrefixTrie:
         self._compile(self.root)
 
     cpdef object make_iter(self):
-        """
-        Create an iterator over the entries in the trie.
-        This is a placeholder for future implementation.
-        """
-        cdef TrieNode* node = self.root
-        cdef list entries = []
-        _traverse(node, entries)
+        """Create an iterator over all entries in the trie."""
+        cdef vector[Str] raw_entries
+        raw_entries.reserve(self.n_entries)
+        with nogil:
+            _collect_entries(self.root, &raw_entries)
+        cdef size_t i, m = raw_entries.size()
+        cdef list entries = [None] * m
+        for i in range(m):
+            entries[i] = c_str_to_py_str(raw_entries[i])
         return iter(entries)
 
 
@@ -496,6 +501,145 @@ cdef class cPrefixTrie:
         # Store this node's best result and return
         cache_insert_if_better(st, node_key, result)
         return result
+
+    cdef void _collect_nodes(self, TrieNode* node, list nodes):
+        if node == NULL:
+            return
+        nodes.append(<uintptr_t>node)
+        cdef size_t i, m = n_children(node)
+        for i in range(m):
+            self._collect_nodes(child_at(node, i), nodes)
+
+    cpdef bytes to_bytes(self):
+        from struct import pack
+        cdef list nodes = []
+        self._collect_nodes(self.root, nodes)
+        cdef dict node_indices = {}
+        cdef Py_ssize_t i, m = len(nodes)
+        for i in range(m):
+            node_indices[nodes[i]] = i
+
+        cdef bytearray out = bytearray()
+        out.extend(pack('<B', self.allow_indels))
+        out.extend(pack('<I', self.n_entries))
+        out.extend(pack('<I', self.alphabet.size))
+        out.extend(pack('<256i', *[self.alphabet.map[i] for i in range(256)]))
+        out.extend(pack('<I', m))
+
+        cdef TrieNode* node
+        cdef int j, idx_child, child_idx, skip_idx, n_child
+        cdef size_t collapsed_len, leaf_len
+        for i in range(m):
+            node = <TrieNode*> <uintptr_t> nodes[i]
+            collapsed_len = node.collapsed_len if node.collapsed != NULL else 0
+            leaf_len = strlen(node.leaf_value) if node.leaf_value != NULL else 0
+            skip_idx = -1
+            if node.skip_to != NULL:
+                skip_idx = node_indices.get(<uintptr_t>node.skip_to, -1)
+            out.extend(pack('<i', node.node_id))
+            out.extend(pack('<b', node.value))
+            out.extend(pack('<I', collapsed_len))
+            out.extend(pack('<I', leaf_len))
+            out.extend(pack('<i', skip_idx))
+            n_child = n_children(node)
+            out.extend(pack('<I', n_child))
+            for j in range(n_child):
+                idx_child = deref(node.children_idx)[j]
+                child_idx = node_indices[<uintptr_t>node.children[idx_child]]
+                out.extend(pack('<i', idx_child))
+                out.extend(pack('<i', child_idx))
+            if collapsed_len > 0:
+                out.extend(PyBytes_FromStringAndSize(node.collapsed, collapsed_len))
+            if leaf_len > 0:
+                out.extend(PyBytes_FromStringAndSize(node.leaf_value, leaf_len))
+        return bytes(out)
+
+    @staticmethod
+    def from_bytes(bytes data):
+        from struct import unpack_from, calcsize
+        cdef cPrefixTrie trie = cPrefixTrie.__new__(cPrefixTrie)
+        cdef Py_ssize_t offset = 0
+        allow_indels = unpack_from('<B', data, offset)[0]; offset += calcsize('<B')
+        n_entries = unpack_from('<I', data, offset)[0]; offset += calcsize('<I')
+        alphabet_size = unpack_from('<I', data, offset)[0]; offset += calcsize('<I')
+        alphabet_map = unpack_from('<256i', data, offset); offset += calcsize('<256i')
+        n_nodes = unpack_from('<I', data, offset)[0]; offset += calcsize('<I')
+
+        trie.allow_indels = bool(allow_indels)
+        trie.n_entries = n_entries
+        trie.alphabet.size = alphabet_size
+        cdef int ai
+        for ai in range(256):
+            trie.alphabet.map[ai] = alphabet_map[ai]
+
+        cdef list nodes = [0] * n_nodes
+        cdef list child_specs = [None] * n_nodes
+        cdef list skip_indices = [0] * n_nodes
+        cdef TrieNode* node
+
+        cdef int node_id, value, skip_idx, n_child, j, idx_child, child_idx
+        cdef size_t collapsed_len, leaf_len
+        cdef bytes collapsed_bytes, leaf_bytes
+        cdef const char* collapsed_ptr
+        cdef const char* leaf_ptr
+        cdef list child_pairs
+        for ai in range(n_nodes):
+            node_id = unpack_from('<i', data, offset)[0]; offset += 4
+            value = unpack_from('<b', data, offset)[0]; offset += 1
+            collapsed_len = unpack_from('<I', data, offset)[0]; offset += 4
+            leaf_len = unpack_from('<I', data, offset)[0]; offset += 4
+            skip_idx = unpack_from('<i', data, offset)[0]; offset += 4
+            n_child = unpack_from('<I', data, offset)[0]; offset += 4
+            child_pairs = []
+            for j in range(n_child):
+                idx_child = unpack_from('<i', data, offset)[0]; offset += 4
+                child_idx = unpack_from('<i', data, offset)[0]; offset += 4
+                child_pairs.append((idx_child, child_idx))
+            collapsed_bytes = data[offset:offset+collapsed_len]; offset += collapsed_len
+            leaf_bytes = data[offset:offset+leaf_len]; offset += leaf_len
+            if collapsed_len > 0:
+                collapsed_ptr = collapsed_bytes
+            else:
+                collapsed_ptr = NULL
+            if leaf_len > 0:
+                leaf_ptr = leaf_bytes
+            else:
+                leaf_ptr = NULL
+            node = create_node(node_id, <char>value, NULL, <size_t>alphabet_size)
+            if collapsed_len > 0:
+                node.collapsed = <Str>malloc(collapsed_len + 1)
+                if node.collapsed == NULL:
+                    raise MemoryError("Failed to allocate memory for collapsed value")
+                memcpy(node.collapsed, collapsed_ptr, collapsed_len)
+                node.collapsed[collapsed_len] = '\0'
+                node.collapsed_len = collapsed_len
+            else:
+                node.collapsed = NULL
+                node.collapsed_len = 0
+            if leaf_len > 0:
+                node.leaf_value = <Str>malloc(leaf_len + 1)
+                if node.leaf_value == NULL:
+                    raise MemoryError("Failed to allocate memory for leaf value")
+                memcpy(node.leaf_value, leaf_ptr, leaf_len)
+                node.leaf_value[leaf_len] = '\0'
+            else:
+                node.leaf_value = NULL
+            nodes[ai] = <uintptr_t>node
+            child_specs[ai] = child_pairs
+            skip_indices[ai] = skip_idx
+
+        for ai in range(n_nodes):
+            node = <TrieNode*> <uintptr_t> nodes[ai]
+            for idx_child, child_idx in child_specs[ai]:
+                append_child_at_index(node, <TrieNode*> <uintptr_t> nodes[child_idx], idx_child)
+            skip_idx = skip_indices[ai]
+            if skip_idx >= 0:
+                node.skip_to = <TrieNode*> <uintptr_t> nodes[skip_idx]
+            else:
+                node.skip_to = NULL
+
+        trie.root = <TrieNode*> <uintptr_t> nodes[0]
+        return trie, bool(allow_indels)
 
     def __dealloc__(self):
         self._free_node(self.root)
