@@ -49,6 +49,7 @@ class PrefixTrie:
             self.allow_indels = allow_indels
             if not isinstance(entries, list):
                 entries = list(entries)  # Ensure entries is a list
+            self._entries = entries  # Store original entries for pickle support
             self._trie = cPrefixTrie(entries, allow_indels)
             self._shared_memory = None
             self._is_shared_owner = False
@@ -66,8 +67,12 @@ class PrefixTrie:
         :param name: Optional name for the shared memory block
         :return: Name of the created shared memory block
         """
-        # Serialize the trie data using the compiled trie representation
-        serialized_data = self._trie.to_bytes()
+        # Serialize the trie data
+        data = {
+            'entries': self._entries,
+            'allow_indels': self.allow_indels
+        }
+        serialized_data = pickle.dumps(data)
 
         # Create shared memory block
         try:
@@ -97,9 +102,14 @@ class PrefixTrie:
             # Connect to existing shared memory
             shm_block = shm.SharedMemory(name=name, create=False)
 
-            # Deserialize trie from shared memory buffer
+            # Deserialize data
             serialized_data = bytes(shm_block.buf)
-            self._trie, self.allow_indels = cPrefixTrie.from_bytes(serialized_data)
+            data = pickle.loads(serialized_data)
+
+            # Initialize trie
+            self.allow_indels = data['allow_indels']
+            self._entries = data['entries']
+            self._trie = cPrefixTrie(self._entries, self.allow_indels)
 
             # Store reference (but not as owner)
             self._shared_memory = shm_block
@@ -125,19 +135,21 @@ class PrefixTrie:
         Support for pickle serialization.
         Returns the state needed to reconstruct the object.
         """
-        return self._trie.to_bytes()
+        return {
+            'entries': self._entries,
+            'allow_indels': self.allow_indels
+        }
 
     def __setstate__(self, state):
         """
         Support for pickle deserialization.
         Reconstructs the object from the pickled state.
         """
-        try:
-            self._trie, self.allow_indels = cPrefixTrie.from_bytes(state)
-            self._shared_memory = None  # Reset shared memory reference
-            self._is_shared_owner = False  # Not an owner after deserialization
-        except Exception as e:
-            raise RuntimeError(f"Failed to set state from bytes: {e}")
+        self.allow_indels = state['allow_indels']
+        self._entries = state['entries']
+        self._trie = cPrefixTrie(self._entries, self.allow_indels)
+        self._shared_memory = None
+        self._is_shared_owner = False
 
     def __del__(self):
         """Clean up shared memory on deletion if we own it"""
