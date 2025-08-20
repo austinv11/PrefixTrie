@@ -464,8 +464,11 @@ cdef class cPrefixTrie:
                 potential = self._search(st, child_node, query, query_len, curr_idx + 1,
                                          curr_corrections + 1, max_corrections, allow_indels, exact_only)
                 cache_insert_if_better(st, make_key(child_node.node_id, curr_idx + 1, allow_indels), potential)
-                if potential.found and potential.corrections < best_result.corrections:
-                    best_result = potential
+                if potential.found:
+                    if potential.corrections == curr_corrections + 1:
+                        return potential  # Found an exact match with one correction
+                    if potential.corrections < best_result.corrections:
+                        best_result = potential
 
             if best_result.found:
                 return best_result
