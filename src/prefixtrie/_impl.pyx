@@ -145,7 +145,17 @@ cdef inline SearchResult cache_get(const CacheState* st, const Key key) noexcept
         out = deref(it).second
     return out
 
-cdef inline bint cache_insert_if_better(CacheState* st, Key key, SearchResult incoming) noexcept nogil:
+# Combine contains and get calls
+cdef inline bint cache_try_get(const CacheState* st, Key key, SearchResult* out) noexcept nogil:
+    cdef unordered_map[Key, SearchResult].iterator it
+    it = deref(st.data).find(key)
+    if it != deref(st.data).end():
+        out[0] = deref(it).second
+        return True
+    return False
+
+# Store if better, then return the best result
+cdef inline SearchResult cache_store_if_better(CacheState* st, Key key, SearchResult incoming) noexcept nogil:
     cdef unordered_map[Key, SearchResult].iterator it
     cdef pair[Key, SearchResult] p
     it = deref(st.data).find(key)
@@ -153,13 +163,13 @@ cdef inline bint cache_insert_if_better(CacheState* st, Key key, SearchResult in
         p.first = key
         p.second = incoming
         deref(st.data).insert(p)
-        return True
+        return incoming
     else:
         if _is_better(&incoming, &deref(it).second):
             deref(it).second = incoming
-            return True
+            return incoming
         else:
-            return False
+            return deref(it).second
 
 
 cdef void _traverse(TrieNode* n, list entries):
@@ -376,8 +386,7 @@ cdef class cPrefixTrie:
 
         # Cache check
         cdef Key node_key = make_key(node.node_id, curr_idx, allow_indels)
-        if cache_contains(st, node_key):
-            prev = cache_get(st, node_key)
+        if cache_try_get(st, node_key, &prev):
             if prev.corrections <= curr_corrections:
                 return prev
 
@@ -385,9 +394,7 @@ cdef class cPrefixTrie:
         if is_at_query_end and has_complete(node):
             result.found = True
             result.found_str = node.leaf_value
-            if not cache_insert_if_better(st, node_key, result):
-                return cache_get(st, node_key)
-            return result
+            return cache_store_if_better(st, node_key, result)
 
         # If we reached a complete node but haven't consumed all the query, this is only valid with indels
         if has_complete(node) and not is_at_query_end:
@@ -398,18 +405,13 @@ cdef class cPrefixTrie:
                     potential.found = True
                     potential.found_str = node.leaf_value
                     potential.corrections = curr_corrections + remaining_chars
-                    cache_insert_if_better(st, node_key, potential)
-                    result = potential
+                    result = cache_store_if_better(st, node_key, potential)
 
         if is_at_query_end and (not allow_indels or curr_corrections >= max_corrections):
-            if not cache_insert_if_better(st, node_key, result):
-                return cache_get(st, node_key)
-            return result
+            return cache_store_if_better(st, node_key, result)
 
         if (not is_at_query_end) and is_leaf(node) and (not allow_indels or curr_corrections >= max_corrections):
-            if not cache_insert_if_better(st, node_key, result):
-                return cache_get(st, node_key)
-            return result
+            return cache_store_if_better(st, node_key, result)
 
         # Collapsed exact skip
         if node.collapsed is not NULL and node.skip_to is not NULL and node.skip_to != node:
@@ -428,7 +430,7 @@ cdef class cPrefixTrie:
                         if potential.found and (exact_only or potential.corrections <= curr_corrections or not allow_indels):
                             return potential
                         # Otherwise cache it and continue exploring
-                        cache_insert_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels), potential)
+                        cache_store_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels), potential)
 
         # Exact character match (O(1) via alphabet index)
         if curr_idx < query_len:
@@ -440,14 +442,11 @@ cdef class cPrefixTrie:
                                              curr_corrections, max_corrections, allow_indels, exact_only)
                     if potential.found:
                         return potential
-                    cache_insert_if_better(st, make_key(node.children[ai].node_id, curr_idx + 1, allow_indels), potential)
+                    cache_store_if_better(st, make_key(node.children[ai].node_id, curr_idx + 1, allow_indels), potential)
 
         # No budget to correct
         if exact_only or curr_corrections >= max_corrections:
-            if not cache_insert_if_better(st, node_key, result):
-                return cache_get(st, node_key)
-            else:
-                return result
+            return cache_store_if_better(st, node_key, result)
 
         # Try mismatches (iterate only existing children indices)
         if curr_idx < query_len:
@@ -463,7 +462,7 @@ cdef class cPrefixTrie:
                 child_node = node.children[idx_child]
                 potential = self._search(st, child_node, query, query_len, curr_idx + 1,
                                          curr_corrections + 1, max_corrections, allow_indels, exact_only)
-                cache_insert_if_better(st, make_key(child_node.node_id, curr_idx + 1, allow_indels), potential)
+                cache_store_if_better(st, make_key(child_node.node_id, curr_idx + 1, allow_indels), potential)
                 if potential.found:
                     if potential.corrections == curr_corrections + 1:
                         return potential  # Found an exact match with one correction
@@ -485,7 +484,7 @@ cdef class cPrefixTrie:
                                          curr_corrections + 1, max_corrections, True, exact_only)
                 if potential.found:
                     return potential
-                cache_insert_if_better(st, make_key(node.children[idx_child].node_id, curr_idx, True), potential)
+                cache_store_if_better(st, make_key(node.children[idx_child].node_id, curr_idx, True), potential)
 
             # Deletion: advance query index while staying at same trie node
             # This simulates deleting a character from the query
@@ -494,11 +493,10 @@ cdef class cPrefixTrie:
                                          curr_corrections + 1, max_corrections, True, exact_only)
                 if potential.found:
                     return potential
-                cache_insert_if_better(st, make_key(node.node_id, curr_idx + 1, True), potential)
+                cache_store_if_better(st, make_key(node.node_id, curr_idx + 1, True), potential)
 
         # Store this node's best result and return
-        cache_insert_if_better(st, node_key, result)
-        return result
+        return cache_store_if_better(st, node_key, result)
 
     def __dealloc__(self):
         self._free_node(self.root)
