@@ -49,6 +49,8 @@ cdef struct TrieNode:
     TrieNode* skip_to
     TrieNode* parent
     Str leaf_value
+    size_t min_remaining  # Minimum remaining characters to match from this node
+    size_t max_remaining  # Maximum remaining characters to match from this node
 
 cdef TrieNode* create_node(const int node_id, const char value, TrieNode* parent, const size_t alphabet_size):
     cdef TrieNode* node = <TrieNode*>malloc(sizeof(TrieNode))
@@ -66,6 +68,9 @@ cdef TrieNode* create_node(const int node_id, const char value, TrieNode* parent
     deref(node.children_idx).reserve(4)
     node.parent = parent
     node.leaf_value = NULL
+    node.collapsed_len = 0
+    node.min_remaining = 0
+    node.max_remaining = 0
     return node
 
 cdef inline size_t n_children(const TrieNode* n) noexcept nogil:
@@ -221,7 +226,9 @@ cdef class cPrefixTrie:
         for entry in entries:
             last_id = self._insert(entry, last_id)
             self.n_entries += 1
-        self._compile(self.root)
+        self._compile(self.root)  # Compile the Trie
+        self._compute_length_bounds(self.root)  # Compute min/max remaining lengths
+
 
     cpdef object make_iter(self):
         """
@@ -332,6 +339,36 @@ cdef class cPrefixTrie:
             node.collapsed_len = 1
             node.skip_to = node
 
+
+    cdef pair[size_t, size_t] _compute_length_bounds(self, TrieNode* node) nogil:
+        cdef size_t m = n_children(node)
+        cdef size_t i
+        cdef pair[size_t, size_t] child_bounds
+        cdef size_t min_child, max_child
+        if m == 0:
+            node.min_remaining = 0
+            node.max_remaining = 0
+            child_bounds.first = 0
+            child_bounds.second = 0
+            return child_bounds
+        min_child = (<size_t> -1)
+        max_child = 0
+        for i in range(m):
+            child_bounds = self._compute_length_bounds(child_at(node, i))
+            if child_bounds.first < min_child:
+                min_child = child_bounds.first
+            if child_bounds.second > max_child:
+                max_child = child_bounds.second
+        if has_complete(node) and (min_child + 1) > 0:
+            node.min_remaining = 0
+        else:
+            node.min_remaining = min_child + 1
+        node.max_remaining = max_child + 1
+        child_bounds.first = node.min_remaining
+        child_bounds.second = node.max_remaining
+        return child_bounds
+
+
     cpdef tuple[str, bint] search(self, str query, int correction_budget=0):
         cdef Str c_query = py_str_to_c_str(query)
         cdef str found_str_py = None
@@ -373,6 +410,7 @@ cdef class cPrefixTrie:
         cdef char query_char
         cdef size_t skip_len
         cdef size_t remaining_chars
+        cdef size_t len_diff
         cdef size_t m
         cdef int want
         cdef int idx_child
@@ -411,6 +449,17 @@ cdef class cPrefixTrie:
             return cache_store_if_better(st, node_key, result)
 
         if (not is_at_query_end) and is_leaf(node) and (not allow_indels or curr_corrections >= max_corrections):
+            return cache_store_if_better(st, node_key, result)
+
+        # Prune if length difference alone exceeds remaining budget
+        remaining_chars = query_len - curr_idx
+        if remaining_chars < node.min_remaining:
+            len_diff = node.min_remaining - remaining_chars
+        elif remaining_chars > node.max_remaining:
+            len_diff = remaining_chars - node.max_remaining
+        else:
+            len_diff = 0
+        if curr_corrections + len_diff > max_corrections:
             return cache_store_if_better(st, node_key, result)
 
         # Collapsed exact skip
