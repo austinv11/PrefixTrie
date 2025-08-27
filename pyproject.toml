@@ -39,6 +39,7 @@ test = [
     "setuptools>=80",
     "cython>=3.0",
     "pytest>=8.4.1",
+    "rapidfuzz>=3.0",
 ]
 
 [project.urls]
@@ -54,7 +55,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O3", "-std=c++11"], extra-link-args = ["-O3"]}]
+#ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O3", "-std=c++11"], extra-link-args = ["-O3"]}]
+# Config for development mode with debugging symbols
+# Make sure to run:
+#export CFLAGS="-O0 -g"
+#export CXXFLAGS="-O0 -g"
+#export CYTHON_TRACE=1
+#export CYTHON_TRACE_NOGIL=1
+ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O0", "-g", "-std=c++11"], extra-link-args = ["-g"]}]
 include-package-data = true
 zip-safe = false
 

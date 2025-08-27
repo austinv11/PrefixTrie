@@ -30,7 +30,7 @@ class PrefixTrie:
     Thin wrapper around the cPrefixTrie class to provide a Python interface.
     """
 
-    __slots__ = ("_trie", "allow_indels", "_entries", "_shared_memory", "_is_shared_owner")
+    __slots__ = ("_trie", "allow_indels", "_entries", "_shared_memory", "_is_shared_owner", "_exact_set")
 
     def __init__(self, entries: list[str], allow_indels: bool=False, shared_memory_name: str=None):
         """
@@ -53,6 +53,8 @@ class PrefixTrie:
             self._trie = cPrefixTrie(entries, allow_indels)
             self._shared_memory = None
             self._is_shared_owner = False
+            # Create Python set for ultra-fast exact matching
+            self._exact_set = set(entries)
 
         # Register cleanup handler once
         if not _cleanup_registered:
@@ -110,6 +112,8 @@ class PrefixTrie:
             self.allow_indels = data['allow_indels']
             self._entries = data['entries']
             self._trie = cPrefixTrie(self._entries, self.allow_indels)
+            # Create Python set for ultra-fast exact matching
+            self._exact_set = set(self._entries)
 
             # Store reference (but not as owner)
             self._shared_memory = shm_block
@@ -150,6 +154,8 @@ class PrefixTrie:
         self._trie = cPrefixTrie(self._entries, self.allow_indels)
         self._shared_memory = None
         self._is_shared_owner = False
+        # Create Python set for ultra-fast exact matching
+        self._exact_set = set(self._entries)
 
     def __del__(self):
         """Clean up shared memory on deletion if we own it"""
@@ -159,13 +165,23 @@ class PrefixTrie:
             # Object may not be fully initialized
             pass
 
-    def search(self, item: str, correction_budget: int=0) -> tuple[str, bool]:
+    def search(self, item: str, correction_budget: int=0) -> tuple[str | None, bool]:
         """
         Search for an item in the trie with optional corrections.
         :param item: The string to search for in the trie.
         :param correction_budget: Maximum number of corrections allowed (default is 0).
         :return: A tuple containing the found item and a boolean indicating if it was an exact match.
         """
+        # Ultra-fast exact matching using Python set (bypasses all Cython overhead)
+        if correction_budget == 0:
+            # For exact matching, use pure Python set lookup - fastest possible
+            return (item, True) if item in self._exact_set else (None, False)
+
+        # For fuzzy matching, first check if it's an exact match in the set
+        if item in self._exact_set:
+            return (item, True)
+
+        # Use trie for fuzzy matching only when needed
         found, exact = self._trie.search(item, correction_budget)
         return found, exact
 
@@ -175,6 +191,10 @@ class PrefixTrie:
         :param item: The string to check for presence in the trie.
         :return: True if the item is in the trie, False otherwise.
         """
+        # First check in the exact set for ultra-fast exact matching
+        if item in self._exact_set:
+            return True
+
         found, exact = self._trie.search(item)
         return found is not None
 
