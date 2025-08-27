@@ -31,17 +31,6 @@ cdef str c_str_to_py_str(const Str c_str):
         return None
     return PyUnicode_FromString(c_str)
 
-cdef Str c_str_substring(const Str src, size_t start, size_t end) noexcept nogil:
-    """
-    Returns a newly allocated substring from src[start:end]. Note that this is unsafe, all bounds checks are disabled.
-    """
-    cdef size_t src_len = strlen(src)
-    cdef size_t sub_len = end - start
-    cdef Str sub = <Str> malloc(sub_len + 1)
-    memcpy(sub, src + start, sub_len)
-    sub[sub_len] = '\0'
-    return sub
-
 # -----------------------------
 # Trie node & construction
 # -----------------------------
@@ -449,35 +438,15 @@ cdef class cPrefixTrie:
         cdef str found_str_py = None
         cdef size_t target_len = strlen(c_target)
         cdef SubstringSearchResult best_result
-        cdef SubstringSearchResult current_result
-        cdef size_t start_pos
+        cdef bint exact
 
         # Check if the length of the target string makes it impossible to find a match
         if target_len + correction_budget < self.min_length:
             free(c_target)
             return (None, False, -1, -1)
 
-        # Initialize best result
-        best_result.found = False
-        best_result.found_str = NULL
-        best_result.corrections = correction_budget + 1
-        best_result.start_pos = 0
-        best_result.end_pos = 0
-
-        # Try starting the search at each position in the target string
-        for start_pos in range(target_len):
-            with nogil:
-                current_result = self._search_substring_at_position(
-                    c_target, target_len, start_pos, correction_budget
-                )
-
-            # Update best result if this one is better
-            if current_result.found:
-                if not best_result.found or _is_better_substring(&current_result, &best_result):
-                    best_result = current_result
-                    # Exit early if we found a match with the lowest possible corrections and it is the max length
-                    if current_result.corrections == 0 and (current_result.end_pos - current_result.start_pos) == self.max_length:
-                        break
+        with nogil:
+            best_result = self._search_substring_internal(c_target, target_len, correction_budget)
 
         # Convert result to Python types
         if best_result.found:
@@ -650,81 +619,117 @@ cdef class cPrefixTrie:
         # Store this node's best result and return
         return cache_store_if_better(st, node_key, result)
 
-    cdef SubstringSearchResult _search_substring_at_position(self,
-                                                             Str target,
-                                                             size_t target_len,
-                                                             size_t start_pos,
-                                                             int max_corrections) noexcept nogil:
-        """
-        Search for trie entries starting at a specific position in the target string.
-        """
+    cdef SubstringSearchResult _search_substring_internal(self, Str c_target, size_t target_len, int correction_budget) noexcept nogil:
         cdef SubstringSearchResult best_result
-        cdef SearchResult search_res
-        cdef size_t end_pos
-        cdef size_t substring_len
-        cdef size_t min_reasonable_length
-        cdef size_t max_reasonable_length
-        cdef Str substring_target
+        cdef SubstringSearchResult current_result
+        cdef size_t start_pos
         cdef CacheState* st
 
-        # Initialize best result
         best_result.found = False
         best_result.found_str = NULL
-        best_result.corrections = max_corrections + 1
-        best_result.start_pos = start_pos
-        best_result.end_pos = start_pos
+        best_result.corrections = correction_budget + 1
+        best_result.start_pos = 0
+        best_result.end_pos = 0
 
-        # Calculate reasonable length bounds
-        # Minimum: shortest possible match (min_length - max_corrections, but at least 1)
-        min_reasonable_length = max(1, self.min_length - max_corrections)
-        # Maximum: either remaining target length or max_length + corrections
-        max_reasonable_length = min(target_len - start_pos, self.max_length + max_corrections)
+        for start_pos in range(target_len):
+            if target_len - start_pos + correction_budget < self.min_length:
+                break
 
-        # Try different ending positions for the substring
-        # Go from longest to shortest to prefer longer matches when corrections are equal
-        for substring_len in range(max_reasonable_length, min_reasonable_length - 1, -1):
-            end_pos = start_pos + substring_len
-
-            # Make sure we don't go beyond target length
-            if end_pos > target_len:
-                continue
-
-            # Skip if substring length is invalid for our trie
-            if substring_len + max_corrections < self.min_length:
-                continue
-            if substring_len > self.max_length + max_corrections:
-                continue
-
-            # Create a new cache for each substring search to avoid interference
             st = cache_new()
-            cache_reserve(st, substring_len)
-            # Substring the query
-            substring_target = c_str_substring(target, start_pos, end_pos)
+            cache_reserve(st, target_len - start_pos)
 
-            # Search for this substring in the trie
-            search_res = self._search(
-                st, self.root, substring_target, substring_len,
-                0, 0, max_corrections, self.allow_indels, False
+            current_result.found = False
+            current_result.corrections = correction_budget + 1
+
+            self._search_substring_recursive(
+                st, self.root, c_target, target_len, start_pos, start_pos, 0, correction_budget, &current_result
             )
 
-            # Free the substring memory
-            free(substring_target)
             cache_free(st)
 
-            if search_res.found:
-                # Found a match, check if it's better than current best
-                if not best_result.found or search_res.corrections < best_result.corrections:
-                    best_result.found = True
-                    best_result.found_str = search_res.found_str
-                    best_result.corrections = search_res.corrections
-                    best_result.start_pos = start_pos
-                    best_result.end_pos = end_pos
-
-                    # If we found an exact match, we can stop early
-                    if search_res.corrections == 0:
-                        break
-
+            if current_result.found:
+                if _is_better_substring(&current_result, &best_result):
+                    best_result = current_result
+                    if best_result.corrections == 0:
+                        if (best_result.end_pos - best_result.start_pos) >= self.max_length:
+                            break
         return best_result
+
+    cdef void _search_substring_recursive(self,
+                                      CacheState* st,
+                                      TrieNode* node,
+                                      Str target,
+                                      size_t target_len,
+                                      size_t start_pos,
+                                      size_t curr_idx,
+                                      int curr_corrections,
+                                      int max_corrections,
+                                      SubstringSearchResult* best_result_for_start) noexcept nogil:
+        cdef Key node_key
+        cdef SearchResult prev
+        cdef SubstringSearchResult potential_result
+        cdef size_t i, m
+        cdef int ai, idx_child
+        cdef TrieNode* child_node
+        cdef char query_char
+        cdef SearchResult res_to_cache
+
+        node_key = make_key(node.node_id, curr_idx - start_pos, True)
+        if cache_try_get(st, node_key, &prev):
+            if prev.corrections <= curr_corrections:
+                return
+
+        if has_complete(node):
+            potential_result.found = True
+            potential_result.found_str = node.leaf_value
+            potential_result.corrections = curr_corrections
+            potential_result.start_pos = start_pos
+            potential_result.end_pos = curr_idx
+
+            if _is_better_substring(&potential_result, best_result_for_start):
+                best_result_for_start[0] = potential_result
+
+        if curr_idx >= target_len:
+            return
+
+        if best_result_for_start.found and best_result_for_start.corrections == 0:
+            return
+
+        # Exact match
+        query_char = target[curr_idx]
+        ai = self.alphabet.map[<unsigned char> query_char]
+        if ai >= 0 and node.children[ai] != NULL:
+            self._search_substring_recursive(st, node.children[ai], target, target_len, start_pos, curr_idx + 1, curr_corrections, max_corrections, best_result_for_start)
+        if curr_corrections >= max_corrections:
+            res_to_cache.found = False
+            res_to_cache.corrections = curr_corrections
+            res_to_cache.found_str = NULL
+            cache_store_if_better(st, node_key, res_to_cache)
+            return
+
+        # Mismatch
+        m = n_children(node)
+        for i in range(m):
+            idx_child = deref(node.children_idx)[i]
+            if idx_child == ai:
+                continue
+            child_node = node.children[idx_child]
+            self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx + 1, curr_corrections + 1, max_corrections, best_result_for_start)
+
+        # Indels
+        if self.allow_indels:
+            # Insertion
+            for i in range(m):
+                child_node = child_at(node, i)
+                self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx, curr_corrections + 1, max_corrections, best_result_for_start)
+
+            # Deletion
+            self._search_substring_recursive(st, node, target, target_len, start_pos, curr_idx + 1, curr_corrections + 1, max_corrections, best_result_for_start)
+
+        res_to_cache.found = False
+        res_to_cache.corrections = curr_corrections
+        res_to_cache.found_str = NULL
+        cache_store_if_better(st, node_key, res_to_cache)
 
     def __dealloc__(self):
         self._free_node(self.root)
