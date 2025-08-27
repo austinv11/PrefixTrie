@@ -40,6 +40,7 @@ test = [
     "cython>=3.0",
     "pytest>=8.4.1",
     "rapidfuzz>=3.0",
+    "fuzzysearch>=0.8.0"
 ]
 
 [project.urls]

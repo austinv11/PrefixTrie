@@ -185,6 +185,28 @@ class PrefixTrie:
         found, exact = self._trie.search(item, correction_budget)
         return found, exact
 
+    def search_substring(self, target_string: str, correction_budget: int=0) -> tuple[str | None, bool, int, int]:
+        """
+        Search for fuzzy substring matches of trie entries within a target string.
+
+        This method finds any entry from the trie that appears as a fuzzy substring
+        within the target string, allowing for insertions, deletions, and substitutions.
+
+        :param target_string: The string to search within for trie entries
+        :param correction_budget: Maximum number of edits allowed (default is 0)
+        :return: Tuple of (found_string, exact_match, start_pos, end_pos) or (None, False, -1, -1)
+                 where start_pos and end_pos indicate the location of the match in target_string
+
+        Example:
+            >>> trie = PrefixTrie(["HELLO", "WORLD"], allow_indels=True)
+            >>> result = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
+            >>> # Returns: ("HELLO", True, 4, 9)
+
+            >>> result = trie.search_substring("AAAHELOAAAA", correction_budget=1)
+            >>> # Returns: ("HELLO", False, 3, 8) - found with 1 substitution
+        """
+        return self._trie.search_substring(target_string, correction_budget)
+
     def __contains__(self, item: str) -> bool:
         """
         Check if the trie contains the given item.

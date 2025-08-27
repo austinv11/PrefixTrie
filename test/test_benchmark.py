@@ -15,6 +15,13 @@ except ImportError:
     RAPIDFUZZ_AVAILABLE = False
     pytest.skip("rapidfuzz not available", allow_module_level=True)
 
+try:
+    import fuzzysearch
+    from fuzzysearch import find_near_matches
+    FUZZYSEARCH_AVAILABLE = True
+except ImportError:
+    FUZZYSEARCH_AVAILABLE = False
+
 
 def generate_random_strings(n: int, length: int = 10, alphabet: str = None) -> list[str]:
     """Generate n random strings of given length"""
@@ -209,6 +216,102 @@ def benchmark_rapidfuzz_fuzzy(entries: list[str], queries: list[str], score_cuto
     return results
 
 
+def benchmark_fuzzysearch(entries: list[str], queries: list[str], max_distance: int = 1) -> list:
+    """Benchmark fuzzysearch for approximate substring matching"""
+    results = []
+    for query in queries:
+        # Find all entries that match the query with allowed distance
+        matches = find_near_matches(query, entries, max_l_dist=max_distance)
+        if matches:
+            # Take the first match (closest one)
+            result = matches[0].text
+            exact = (matches[0].dist == 0)
+            results.append((result, exact))
+        else:
+            results.append((None, False))
+
+    return results
+
+
+def benchmark_prefixtrie_substring(patterns: list[str], targets: list[str], max_corrections: int = 1):
+    """Benchmark PrefixTrie substring search performance"""
+    trie = PrefixTrie(patterns, allow_indels=True)
+
+    results = []
+    for target in targets:
+        result, exact, start, end = trie.search_substring(target, correction_budget=max_corrections)
+        results.append((result, exact, start, end))
+
+    return results
+
+
+def benchmark_fuzzysearch_substring(patterns: list[str], targets: list[str], max_dist: int = 1):
+    """Benchmark fuzzysearch performance for substring matching"""
+    if not FUZZYSEARCH_AVAILABLE:
+        return None
+
+    results = []
+    for target in targets:
+        best_match = None
+        best_dist = max_dist + 1
+        best_start = -1
+        best_end = -1
+
+        # Search for each pattern in the target
+        for pattern in patterns:
+            try:
+                matches = find_near_matches(pattern, target, max_l_dist=max_dist)
+                if matches:
+                    # Take the first match (fuzzysearch may return multiple)
+                    match = matches[0]
+                    if match.dist < best_dist or (match.dist == best_dist and best_match is None):
+                        best_match = pattern
+                        best_dist = match.dist
+                        best_start = match.start
+                        best_end = match.end
+            except Exception:
+                # Handle any fuzzysearch errors
+                continue
+
+        if best_match is not None:
+            exact = (best_dist == 0)
+            results.append((best_match, exact, best_start, best_end))
+        else:
+            results.append((None, False, -1, -1))
+
+    return results
+
+
+def validate_substring_results_consistency(patterns: list[str], pt_results: list, fs_results: list, test_name: str = ""):
+    """Validate that substring search results are consistent between implementations"""
+    print(f"  Validating substring consistency for {test_name}...")
+
+    patterns_set = set(patterns)
+    inconsistencies = []
+
+    for i, (pt_result, fs_result) in enumerate(zip(pt_results, fs_results)):
+        pt_found, pt_exact, pt_start, pt_end = pt_result
+        fs_found, fs_exact, fs_start, fs_end = fs_result
+
+        # Check if found patterns are valid
+        if pt_found is not None and pt_found not in patterns_set:
+            inconsistencies.append(f"Index {i}: PrefixTrie found '{pt_found}' not in original patterns")
+
+        if fs_found is not None and fs_found not in patterns_set:
+            inconsistencies.append(f"Index {i}: fuzzysearch found '{fs_found}' not in original patterns")
+
+    if inconsistencies:
+        print(f"  WARNING: Found {len(inconsistencies)} inconsistencies:")
+        for inc in inconsistencies[:3]:  # Show first 3
+            print(f"    {inc}")
+        if len(inconsistencies) > 3:
+            print(f"    ... and {len(inconsistencies) - 3} more")
+    else:
+        print(f"  ✓ No inconsistencies found")
+
+    return len(inconsistencies) == 0
+
+
 def run_benchmark_suite(name: str, entries: list[str], queries: list[str], num_runs: int = 5):
     """Run a complete benchmark suite"""
     print(f"\n{'='*60}")
@@ -288,6 +391,30 @@ def run_benchmark_suite(name: str, entries: list[str], queries: list[str], num_r
     print(f"PrefixTrie:  {pt_fuzzy_avg:.4f}s ± {pt_fuzzy_std:.4f}s")
     print(f"RapidFuzz:   {rf_fuzzy_avg:.4f}s ± {rf_fuzzy_std:.4f}s")
     print(f"Speedup:     {rf_fuzzy_avg/pt_fuzzy_avg:.2f}x" if pt_fuzzy_avg > 0 else "N/A")
+
+    # Substring matching benchmarks (using fuzzysearch)
+    if FUZZYSEARCH_AVAILABLE:
+        print("\nSUBSTRING MATCHING:")
+        print("-" * 40)
+
+        fuzzysearch_times = []
+        fs_fuzzy_results = None
+
+        for i in range(num_runs):
+            # FuzzySearch fuzzy
+            results, time_taken = time_function(benchmark_fuzzysearch, entries, queries, 1)
+            fuzzysearch_times.append(time_taken)
+            if fs_fuzzy_results is None:
+                fs_fuzzy_results = results
+
+        # Validate consistency
+        validate_trie_consistency(entries, fs_fuzzy_results, f"{name} - FuzzySearch Fuzzy")
+
+        fs_fuzzy_avg = statistics.mean(fuzzysearch_times)
+        fs_fuzzy_std = statistics.stdev(fuzzysearch_times) if len(fuzzysearch_times) > 1 else 0
+
+        print(f"FuzzySearch:  {fs_fuzzy_avg:.4f}s ± {fs_fuzzy_std:.4f}s")
+        print(f"Speedup:     {fs_fuzzy_avg/pt_fuzzy_avg:.2f}x" if pt_fuzzy_avg > 0 else "N/A")
 
     return {
         'name': name,
@@ -599,9 +726,248 @@ def create_mixed_length_dataset():
     return entries, 2000
 
 
-if __name__ == "__main__":
-    # Run the full benchmark suite when script is executed directly
-    if RAPIDFUZZ_AVAILABLE:
-        run_full_benchmark_suite()
-    else:
-        print("RapidFuzz not available. Install with: pip install rapidfuzz")
+def generate_target_strings_with_embedded_patterns(patterns: list[str], num_targets: int, target_length: int, embed_ratio: float) -> list[str]:
+    """Generate target strings with embedded patterns for testing substring search"""
+    targets = []
+    num_patterns = len(patterns)
+
+    for _ in range(num_targets):
+        # Start with a random string
+        target = ''.join(random.choices(string.ascii_lowercase, k=target_length))
+
+        # Embed patterns based on the embed_ratio
+        for pattern in patterns:
+            if random.random() < embed_ratio:
+                # Randomly decide where to embed the pattern
+                start = random.randint(0, target_length - len(pattern))
+                target = target[:start] + pattern + target[start+len(pattern):]
+
+        targets.append(target)
+
+    return targets
+
+
+class TestSubstringBenchmarks:
+    """Benchmark tests for substring search functionality"""
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_short_patterns_small_scale_substring(self):
+        """Test substring search with short patterns on small scale"""
+        patterns = generate_random_strings(50, 5)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 100, 50, 0.8)
+
+        result = run_substring_benchmark_suite("Short Patterns - Small Scale", patterns, targets, max_corrections=1, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_short_patterns_medium_scale_substring(self):
+        """Test substring search with short patterns on medium scale"""
+        patterns = generate_random_strings(200, 6)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 500, 100, 0.7)
+
+        result = run_substring_benchmark_suite("Short Patterns - Medium Scale", patterns, targets, max_corrections=1, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_medium_patterns_substring(self):
+        """Test substring search with medium-length patterns"""
+        patterns = generate_random_strings(100, 15)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 200, 150, 0.6)
+
+        result = run_substring_benchmark_suite("Medium Patterns", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_dna_sequences_short_substring(self):
+        """Test substring search with short DNA sequences"""
+        patterns = generate_dna_sequences(100, 10)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 200, 100, 0.7)
+
+        result = run_substring_benchmark_suite("DNA Sequences - Short", patterns, targets, max_corrections=1, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_dna_sequences_medium_substring(self):
+        """Test substring search with medium DNA sequences"""
+        patterns = generate_dna_sequences(200, 20)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 300, 200, 0.6)
+
+        result = run_substring_benchmark_suite("DNA Sequences - Medium", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_protein_sequences_substring(self):
+        """Test substring search with protein sequences"""
+        patterns = generate_protein_sequences(100, 25)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 150, 250, 0.7)
+
+        result = run_substring_benchmark_suite("Protein Sequences", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_realistic_words_substring(self):
+        """Test substring search with realistic word patterns"""
+        patterns = generate_realistic_words(300)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 400, 300, 0.6)
+
+        result = run_substring_benchmark_suite("Realistic Words", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_high_error_rate_substring(self):
+        """Test substring search with high error tolerance"""
+        patterns = generate_random_strings(100, 10)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 200, 150, 0.7)
+
+        result = run_substring_benchmark_suite("High Error Rate", patterns, targets, max_corrections=4, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_very_long_targets_substring(self):
+        """Test substring search with very long target strings"""
+        patterns = generate_random_strings(50, 8)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 50, 1000, 0.9)
+
+        result = run_substring_benchmark_suite("Very Long Targets", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_large_scale_substring(self):
+        """Test substring search with large number of patterns"""
+        patterns = generate_random_strings(500, 12)
+        targets = generate_target_strings_with_embedded_patterns(patterns, 1000, 200, 0.5)
+
+        result = run_substring_benchmark_suite("Large Scale", patterns, targets, max_corrections=2, num_runs=1)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+    @pytest.mark.skipif(not FUZZYSEARCH_AVAILABLE, reason="fuzzysearch not available")
+    def test_mixed_pattern_lengths_substring(self):
+        """Test substring search with mixed pattern lengths"""
+        patterns = []
+        patterns.extend(generate_random_strings(100, 5))   # Short
+        patterns.extend(generate_random_strings(100, 15))  # Medium
+        patterns.extend(generate_random_strings(50, 30))   # Long
+        random.shuffle(patterns)
+
+        targets = generate_target_strings_with_embedded_patterns(patterns, 300, 200, 0.6)
+
+        result = run_substring_benchmark_suite("Mixed Pattern Lengths", patterns, targets, max_corrections=2, num_runs=2)
+
+        assert result['prefixtrie']['avg'] > 0
+        if result['fuzzysearch']:
+            assert result['fuzzysearch']['avg'] > 0
+
+
+def run_substring_benchmark_suite(name: str, patterns: list[str], targets: list[str], max_corrections: int = 1, num_runs: int = 3):
+    """Run a complete substring search benchmark comparison"""
+    print(f"\n{'='*60}")
+    print(f"SUBSTRING BENCHMARK: {name}")
+    print(f"Patterns: {len(patterns)}, Targets: {len(targets)}, Max corrections: {max_corrections}")
+    print(f"{'='*60}")
+
+    # Benchmark PrefixTrie multiple times
+    pt_times = []
+    pt_results = None
+
+    print(f"\nRunning PrefixTrie substring benchmark ({num_runs} runs)...")
+    for run in range(num_runs):
+        results, time_taken = time_function(benchmark_prefixtrie_substring, patterns, targets, max_corrections)
+        pt_times.append(time_taken)
+        if pt_results is None:
+            pt_results = results
+
+    # Benchmark fuzzysearch multiple times
+    fs_times = []
+    fs_results = None
+
+    if FUZZYSEARCH_AVAILABLE:
+        print(f"\nRunning fuzzysearch substring benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            results, time_taken = time_function(benchmark_fuzzysearch_substring, patterns, targets, max_corrections)
+            fs_times.append(time_taken)
+            if fs_results is None:
+                fs_results = results
+
+    # Calculate statistics
+    def calc_stats(times):
+        if not times:
+            return 0, 0
+        avg = statistics.mean(times)
+        std = statistics.stdev(times) if len(times) > 1 else 0
+        return avg, std
+
+    pt_avg, pt_std = calc_stats(pt_times)
+
+    # Print results
+    print(f"\n{'Results':<20} {'Avg Time':<12} {'Std Dev':<12}")
+    print("-" * 50)
+    print(f"{'PrefixTrie Substring':<20} {pt_avg:.4f}s{'':<4} {pt_std:.4f}s")
+
+    if FUZZYSEARCH_AVAILABLE:
+        fs_avg, fs_std = calc_stats(fs_times)
+        print(f"{'fuzzysearch':<20} {fs_avg:.4f}s{'':<4} {fs_std:.4f}s")
+
+        # Calculate speedups
+        if pt_avg > 0 and fs_avg > 0:
+            speedup = fs_avg / pt_avg
+            print(f"\nSpeedup Analysis:")
+            print(f"Speedup: {speedup:.2f}x {'(PrefixTrie faster)' if speedup > 1 else '(fuzzysearch faster)'}")
+
+    # Analyze result quality
+    if pt_results and fs_results and FUZZYSEARCH_AVAILABLE:
+        pt_found = sum(1 for r in pt_results if r[0] is not None)
+        fs_found = sum(1 for r in fs_results if r[0] is not None)
+
+        print(f"\nResult Quality:")
+        print(f"PrefixTrie found: {pt_found}/{len(targets)} targets ({pt_found/len(targets)*100:.1f}%)")
+        print(f"fuzzysearch found: {fs_found}/{len(targets)} targets ({fs_found/len(targets)*100:.1f}%)")
+
+    # Validate consistency of results
+    if pt_results and fs_results and FUZZYSEARCH_AVAILABLE:
+        validate_substring_results_consistency(patterns, pt_results, fs_results, f"{name} - Substring Search")
+
+    return {
+        'name': name,
+        'patterns_count': len(patterns),
+        'targets_count': len(targets),
+        'max_corrections': max_corrections,
+        'prefixtrie': {
+            'avg': pt_avg,
+            'std': pt_std,
+        },
+        'fuzzysearch': {
+            'avg': fs_avg if FUZZYSEARCH_AVAILABLE else 0,
+            'std': fs_std if FUZZYSEARCH_AVAILABLE else 0
+        } if FUZZYSEARCH_AVAILABLE else None,
+        'speedup': fs_avg / pt_avg if FUZZYSEARCH_AVAILABLE and pt_avg > 0 else 0
+    }

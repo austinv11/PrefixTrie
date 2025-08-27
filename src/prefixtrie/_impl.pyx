@@ -31,6 +31,17 @@ cdef str c_str_to_py_str(const Str c_str):
         return None
     return PyUnicode_FromString(c_str)
 
+cdef Str c_str_substring(const Str src, size_t start, size_t end) noexcept nogil:
+    """
+    Returns a newly allocated substring from src[start:end]. Note that this is unsafe, all bounds checks are disabled.
+    """
+    cdef size_t src_len = strlen(src)
+    cdef size_t sub_len = end - start
+    cdef Str sub = <Str> malloc(sub_len + 1)
+    memcpy(sub, src + start, sub_len)
+    sub[sub_len] = '\0'
+    return sub
+
 # -----------------------------
 # Trie node & construction
 # -----------------------------
@@ -100,11 +111,26 @@ cdef struct SearchResult:
     Str found_str
     int corrections
 
+# New structure for substring search results
+cdef struct SubstringSearchResult:
+    bint found
+    Str found_str
+    int corrections
+    size_t start_pos    # Starting position in the target string
+    size_t end_pos      # Ending position in the target string
+
 cdef inline bint _is_better(const SearchResult* a, const SearchResult* b) noexcept nogil:
     if a.found != b.found:
         return a.found and not b.found
     return a.corrections < b.corrections
 
+cdef inline bint _is_better_substring(const SubstringSearchResult* a, const SubstringSearchResult* b) noexcept nogil:
+    if a.found != b.found:
+        return a.found and not b.found
+    if a.corrections != b.corrections:
+        return a.corrections < b.corrections
+    # Return true if the new result has a longer length
+    return (a.end_pos - a.start_pos) > (b.end_pos - b.start_pos)
 # -----------------------------
 # Pure C++ cache (opaque to Python)
 # -----------------------------
@@ -197,6 +223,8 @@ cdef class cPrefixTrie:
     cdef int n_entries
     cdef bint allow_indels
     cdef Alphabet alphabet
+    cdef size_t max_length
+    cdef size_t min_length
 
     def __init__(self, entries: list[str], allow_indels: bool=False):
         # Scan for alphabet to optimize lookups
@@ -222,6 +250,8 @@ cdef class cPrefixTrie:
         self.root = create_node(0, '\0', NULL, <size_t> self.alphabet.size)
         self.n_entries = 0
         self.allow_indels = allow_indels
+        self.max_length = 0
+        self.min_length = <size_t>-1  # Maximum possible size_t value
         cdef int last_id = 1
         for entry in entries:
             last_id = self._insert(entry, last_id)
@@ -248,6 +278,20 @@ cdef class cPrefixTrie:
         """
         return self.n_entries
 
+    cpdef int get_min_length(self):
+        """
+        Get the minimum length of entries in the trie.
+        :return: The minimum length of entries in the trie.
+        """
+        return self.min_length
+
+    cpdef int get_max_length(self):
+        """
+        Get the maximum length of entries in the trie.
+        :return: The maximum length of entries in the trie.
+        """
+        return self.max_length
+
 
     cdef int _insert(self, str entry, size_t last_id):
         cdef TrieNode* node = self.root
@@ -258,6 +302,11 @@ cdef class cPrefixTrie:
         cdef Str c_entry = py_str_to_c_str(entry)
         cdef size_t i, k, n = strlen(c_entry)
         cdef int idx, idx_next
+
+        if n > self.max_length:
+            self.max_length = n
+        if n < self.min_length:
+            self.min_length = n
 
         for i in range(n):
             ch = c_entry[i]
@@ -340,7 +389,7 @@ cdef class cPrefixTrie:
             node.skip_to = node
 
 
-    cdef pair[size_t, size_t] _compute_length_bounds(self, TrieNode* node) nogil:
+    cdef pair[size_t, size_t] _compute_length_bounds(self, TrieNode* node) noexcept nogil:
         cdef size_t m = n_children(node)
         cdef size_t i
         cdef pair[size_t, size_t] child_bounds
@@ -388,6 +437,58 @@ cdef class cPrefixTrie:
         free(c_query)
         return (found_str_py, exact)
 
+    cpdef tuple search_substring(self, str target_string, int correction_budget=0):
+        """
+        Search for fuzzy substring matches of trie entries within a target string.
+
+        :param target_string: The string to search within
+        :param correction_budget: Maximum number of edits allowed
+        :return: Tuple of (found_string, exact_match, start_pos, end_pos) or (None, False, -1, -1)
+        """
+        cdef Str c_target = py_str_to_c_str(target_string)
+        cdef str found_str_py = None
+        cdef size_t target_len = strlen(c_target)
+        cdef SubstringSearchResult best_result
+        cdef SubstringSearchResult current_result
+        cdef size_t start_pos
+
+        # Check if the length of the target string makes it impossible to find a match
+        if target_len + correction_budget < self.min_length:
+            free(c_target)
+            return (None, False, -1, -1)
+
+        # Initialize best result
+        best_result.found = False
+        best_result.found_str = NULL
+        best_result.corrections = correction_budget + 1
+        best_result.start_pos = 0
+        best_result.end_pos = 0
+
+        # Try starting the search at each position in the target string
+        for start_pos in range(target_len):
+            with nogil:
+                current_result = self._search_substring_at_position(
+                    c_target, target_len, start_pos, correction_budget
+                )
+
+            # Update best result if this one is better
+            if current_result.found:
+                if not best_result.found or _is_better_substring(&current_result, &best_result):
+                    best_result = current_result
+                    # Exit early if we found a match with the lowest possible corrections and it is the max length
+                    if current_result.corrections == 0 and (current_result.end_pos - current_result.start_pos) == self.max_length:
+                        break
+
+        # Convert result to Python types
+        if best_result.found:
+            found_str_py = c_str_to_py_str(best_result.found_str)
+            exact = (best_result.corrections == 0)
+            free(c_target)
+            return (found_str_py, exact, best_result.start_pos, best_result.end_pos)
+        else:
+            free(c_target)
+            return (None, False, -1, -1)
+
     cdef SearchResult _search(self,
                                CacheState* st,
                                TrieNode* node,
@@ -417,6 +518,8 @@ cdef class cPrefixTrie:
         cdef int ai
         cdef Str skip_str
         cdef TrieNode* child_node
+        cdef size_t remaining_query_len
+        cdef size_t min_possible_edits
 
         result.found = False
         result.corrections = curr_corrections
@@ -546,6 +649,82 @@ cdef class cPrefixTrie:
 
         # Store this node's best result and return
         return cache_store_if_better(st, node_key, result)
+
+    cdef SubstringSearchResult _search_substring_at_position(self,
+                                                             Str target,
+                                                             size_t target_len,
+                                                             size_t start_pos,
+                                                             int max_corrections) noexcept nogil:
+        """
+        Search for trie entries starting at a specific position in the target string.
+        """
+        cdef SubstringSearchResult best_result
+        cdef SearchResult search_res
+        cdef size_t end_pos
+        cdef size_t substring_len
+        cdef size_t min_reasonable_length
+        cdef size_t max_reasonable_length
+        cdef Str substring_target
+        cdef CacheState* st
+
+        # Initialize best result
+        best_result.found = False
+        best_result.found_str = NULL
+        best_result.corrections = max_corrections + 1
+        best_result.start_pos = start_pos
+        best_result.end_pos = start_pos
+
+        # Calculate reasonable length bounds
+        # Minimum: shortest possible match (min_length - max_corrections, but at least 1)
+        min_reasonable_length = max(1, self.min_length - max_corrections)
+        # Maximum: either remaining target length or max_length + corrections
+        max_reasonable_length = min(target_len - start_pos, self.max_length + max_corrections)
+
+        # Try different ending positions for the substring
+        # Go from longest to shortest to prefer longer matches when corrections are equal
+        for substring_len in range(max_reasonable_length, min_reasonable_length - 1, -1):
+            end_pos = start_pos + substring_len
+
+            # Make sure we don't go beyond target length
+            if end_pos > target_len:
+                continue
+
+            # Skip if substring length is invalid for our trie
+            if substring_len + max_corrections < self.min_length:
+                continue
+            if substring_len > self.max_length + max_corrections:
+                continue
+
+            # Create a new cache for each substring search to avoid interference
+            st = cache_new()
+            cache_reserve(st, substring_len)
+            # Substring the query
+            substring_target = c_str_substring(target, start_pos, end_pos)
+
+            # Search for this substring in the trie
+            search_res = self._search(
+                st, self.root, substring_target, substring_len,
+                0, 0, max_corrections, self.allow_indels, False
+            )
+
+            # Free the substring memory
+            free(substring_target)
+            cache_free(st)
+
+            if search_res.found:
+                # Found a match, check if it's better than current best
+                if not best_result.found or search_res.corrections < best_result.corrections:
+                    best_result.found = True
+                    best_result.found_str = search_res.found_str
+                    best_result.corrections = search_res.corrections
+                    best_result.start_pos = start_pos
+                    best_result.end_pos = end_pos
+
+                    # If we found an exact match, we can stop early
+                    if search_res.corrections == 0:
+                        break
+
+        return best_result
 
     def __dealloc__(self):
         self._free_node(self.root)

@@ -891,6 +891,384 @@ class TestPrefixTrieAlgorithmCorrectness:
         assert result in ["abcdef", "abcxyz"]
         assert exact is False
 
+class TestPrefixTrieSubstringSearch:
+    """Test substring search functionality of PrefixTrie"""
+
+    def test_basic_exact_substring_search(self):
+        """Test basic exact substring matching"""
+        entries = ["HELLO", "WORLD", "TEST"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Test exact matches
+        result, exact, start, end = trie.search_substring("HELLO", correction_budget=0)
+        assert result == "HELLO"
+        assert exact is True
+        assert start == 0
+        assert end == 5
+
+        # Test substring in middle
+        result, exact, start, end = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
+        assert result == "HELLO"
+        assert exact is True
+        assert start == 4
+        assert end == 9
+
+        # Test at beginning
+        result, exact, start, end = trie.search_substring("HELLOAAAA", correction_budget=0)
+        assert result == "HELLO"
+        assert exact is True
+        assert start == 0
+        assert end == 5
+
+        # Test at end
+        result, exact, start, end = trie.search_substring("AAAAHELLO", correction_budget=0)
+        assert result == "HELLO"
+        assert exact is True
+        assert start == 4
+        assert end == 9
+
+    def test_no_match_substring_search(self):
+        """Test substring search when no match is found"""
+        entries = ["HELLO", "WORLD"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # No match found
+        result, exact, start, end = trie.search_substring("AAAABBBBCCCC", correction_budget=0)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+        # No match even with correction budget
+        result, exact, start, end = trie.search_substring("ZZZZXXXX", correction_budget=2)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+    def test_fuzzy_substring_search(self):
+        """Test fuzzy substring matching with corrections"""
+        entries = ["HELLO", "WORLD"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Single substitution
+        result, exact, start, end = trie.search_substring("AAAHELOAAAA", correction_budget=1)
+        assert result == "HELLO"
+        assert exact is False
+        assert start == 3
+        assert end == 7  # "HELO" spans positions 3-6, so end is 7
+
+        # Single deletion (missing character)
+        result, exact, start, end = trie.search_substring("AAAHELLOAAAA", correction_budget=1)
+        assert result == "HELLO"
+        assert exact is True  # This should be exact since HELLO is found exactly
+        assert start == 3
+        assert end == 8
+
+    def test_multiple_corrections_substring(self):
+        """Test substring search requiring multiple corrections"""
+        entries = ["ALGORITHM", "TESTING"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Two substitutions
+        result, exact, start, end = trie.search_substring("AAAAALGROTHMAAA", correction_budget=2)
+        assert result == "ALGORITHM"
+        assert exact is False
+        assert start == 4
+        assert end == 12  # "ALGROTHM" spans positions 4-11, so end is 12
+
+        # Mixed corrections (substitution + insertion/deletion)
+        result, exact, start, end = trie.search_substring("BBBBTESTNGBBB", correction_budget=2)
+        assert result == "TESTING"
+        assert exact is False
+        # The exact positions depend on the algorithm's alignment choice
+
+    def test_overlapping_matches_substring(self):
+        """Test substring search with overlapping potential matches"""
+        entries = ["TEST", "TESTING", "EST"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Should find the longest/best match
+        result, exact, start, end = trie.search_substring("AAATESTINGAAA", correction_budget=0)
+        assert result in ["TEST", "TESTING", "EST"]  # Any of these could be valid
+        assert exact is True
+
+        # Test with fuzzy matching
+        result, exact, start, end = trie.search_substring("AAATESXINGAAA", correction_budget=1)
+        assert result in ["TEST", "TESTING"]  # Should prefer one of these
+        assert exact is False
+
+    def test_multiple_entries_in_target(self):
+        """Test when target string contains multiple entries"""
+        entries = ["CAT", "DOG", "BIRD"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Multiple entries present - should find one
+        result, exact, start, end = trie.search_substring("CATDOGBIRD", correction_budget=0)
+        assert result in ["CAT", "DOG", "BIRD"]
+        assert exact is True
+
+        # Test with spacing
+        result, exact, start, end = trie.search_substring("AAACATAAADOGAAABIRD", correction_budget=0)
+        assert result in ["CAT", "DOG", "BIRD"]
+        assert exact is True
+
+    def test_edge_cases_substring(self):
+        """Test edge cases for substring search"""
+        entries = ["A", "AB", "ABC"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Empty target string
+        result, exact, start, end = trie.search_substring("", correction_budget=0)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+        # Single character target
+        result, exact, start, end = trie.search_substring("A", correction_budget=0)
+        assert result == "A"
+        assert exact is True
+        assert start == 0
+        assert end == 1
+
+        # Target shorter than all entries
+        short_entries = ["HELLO", "WORLD"]
+        short_trie = PrefixTrie(short_entries, allow_indels=True)
+        result, exact, start, end = short_trie.search_substring("HI", correction_budget=0)
+        assert result is None
+        assert exact is False
+
+    def test_correction_budget_limits_substring(self):
+        """Test that correction budget is properly respected in substring search"""
+        entries = ["HELLO"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Should find with sufficient budget
+        result, exact, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=2)
+        assert result == "HELLO"
+        assert exact is False
+
+        # Should not find with insufficient budget
+        result, exact, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=1)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+    def test_dna_sequence_substring_search(self):
+        """Test substring search with DNA sequences"""
+        sequences = ["ATCG", "GCTA", "TTAA", "CCGG"]
+        trie = PrefixTrie(sequences, allow_indels=True)
+
+        # Exact DNA match
+        result, exact, start, end = trie.search_substring("AAAAATCGAAAA", correction_budget=0)
+        assert result == "ATCG"
+        assert exact is True
+        assert start == 4
+        assert end == 8
+
+        # DNA with single base substitution
+        result, exact, start, end = trie.search_substring("AAAAATCAAAAA", correction_budget=1)
+        assert result == "ATCG"
+        assert exact is False
+        assert start == 4
+        assert end == 8  # "ATCA" spans positions 4-7, so end is 8
+
+    def test_long_dna_substring_search(self):
+        """Test substring search with longer DNA sequences"""
+        sequences = [
+            "ATCGATCGATCG",  # 12 bases
+            "GCTAGCTAGCTA",  # 12 bases
+            "AAATTTCCCGGG",  # 12 bases
+        ]
+        trie = PrefixTrie(sequences, allow_indels=True)
+
+        # Exact match in long string
+        target = "NNNNATCGATCGATCGNNNN"
+        result, exact, start, end = trie.search_substring(target, correction_budget=0)
+        assert result == "ATCGATCGATCG"
+        assert exact is True
+        assert start == 4
+        assert end == 16
+
+        # Fuzzy match with mutations
+        target_fuzzy = "NNNNATCGATCGATCANNNN"  # G->A mutation at end
+        result, exact, start, end = trie.search_substring(target_fuzzy, correction_budget=1)
+        assert result == "ATCGATCGATCG"
+        assert exact is False
+        assert start == 4
+        assert end == 16  # "ATCGATCGATCA" spans positions 4-15, so end is 16
+
+    def test_protein_sequence_substring_search(self):
+        """Test substring search with protein sequences"""
+        proteins = ["MKLLFY", "ARNDCQ", "EGHILK"]  # Amino acid sequences
+        trie = PrefixTrie(proteins, allow_indels=True)
+
+        # Exact protein match
+        result, exact, start, end = trie.search_substring("XXXMKLLFYXXX", correction_budget=0)
+        assert result == "MKLLFY"
+        assert exact is True
+        assert start == 3
+        assert end == 9
+
+        # Protein with amino acid substitution
+        result, exact, start, end = trie.search_substring("XXXMKLLAYXXX", correction_budget=1)
+        assert result == "MKLLFY"
+        assert exact is False
+        assert start == 3
+        assert end == 9
+
+    def test_performance_large_target_string(self):
+        """Test performance with large target strings"""
+        entries = ["NEEDLE", "HAYSTACK", "SEARCH"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Large target string with match at end
+        large_target = "X" * 1000 + "NEEDLE" + "Y" * 1000
+        result, exact, start, end = trie.search_substring(large_target, correction_budget=0)
+        assert result == "NEEDLE"
+        assert exact is True
+        assert start == 1000
+        assert end == 1006
+
+    def test_special_characters_substring(self):
+        """Test substring search with special characters"""
+        entries = ["hello!", "@test#", "a-b-c", "x_y_z"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Special characters exact match
+        result, exact, start, end = trie.search_substring("AAA@test#BBB", correction_budget=0)
+        assert result == "@test#"
+        assert exact is True
+        assert start == 3
+        assert end == 9
+
+        # Special characters with fuzzy match
+        result, exact, start, end = trie.search_substring("AAAhelloBBB", correction_budget=1)
+        assert result == "hello!"
+        assert exact is False
+        assert start == 3
+        assert end == 9  # "hello" spans positions 3-7, but algorithm may find "hellob" spans 3-8, so end is 9
+
+    def test_case_sensitive_substring(self):
+        """Test that substring search respects case sensitivity"""
+        entries = ["Hello", "HELLO", "hello"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Exact case matches
+        result, exact, start, end = trie.search_substring("AAAHelloAAA", correction_budget=0)
+        assert result == "Hello"
+        assert exact is True
+
+        result, exact, start, end = trie.search_substring("AAAHELLOAAa", correction_budget=0)
+        assert result == "HELLO"
+        assert exact is True
+
+        result, exact, start, end = trie.search_substring("AAAhelloAAA", correction_budget=0)
+        assert result == "hello"
+        assert exact is True
+
+    def test_boundary_positions_substring(self):
+        """Test substring matches at string boundaries"""
+        entries = ["START", "END"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Match at very beginning
+        result, exact, start, end = trie.search_substring("STARTXXX", correction_budget=0)
+        assert result == "START"
+        assert exact is True
+        assert start == 0
+        assert end == 5
+
+        # Match at very end
+        result, exact, start, end = trie.search_substring("XXXEND", correction_budget=0)
+        assert result == "END"
+        assert exact is True
+        assert start == 3
+        assert end == 6
+
+        # Exact string match (target == entry)
+        result, exact, start, end = trie.search_substring("START", correction_budget=0)
+        assert result == "START"
+        assert exact is True
+        assert start == 0
+        assert end == 5
+
+    def test_substring_with_repeats(self):
+        """Test substring search with repetitive patterns"""
+        entries = ["ABAB", "CACA", "TATA"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Repetitive target with exact match
+        result, exact, start, end = trie.search_substring("ABABABABAB", correction_budget=0)
+        assert result == "ABAB"
+        assert exact is True
+        # Could match at position 0-4, 2-6, 4-8, or 6-10
+
+        # Repetitive with single error - use a string where ABAB needs 1 correction
+        result, exact, start, end = trie.search_substring("XXABXBXX", correction_budget=1)
+        assert result == "ABAB"
+        assert exact is False
+
+    def test_empty_trie_substring(self):
+        """Test substring search with empty trie"""
+        trie = PrefixTrie([], allow_indels=True)
+
+        result, exact, start, end = trie.search_substring("ANYTARGET", correction_budget=0)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+        result, exact, start, end = trie.search_substring("ANYTARGET", correction_budget=5)
+        assert result is None
+        assert exact is False
+        assert start == -1
+        assert end == -1
+
+    def test_very_short_entries_substring(self):
+        """Test substring search with very short entries"""
+        entries = ["A", "T", "C", "G"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # Single character matches
+        result, exact, start, end = trie.search_substring("XAXBXCXDX", correction_budget=0)
+        assert result in ["A", "C"]  # Could match either
+        assert exact is True
+
+        # Fuzzy single character match
+        result, exact, start, end = trie.search_substring("XXXXXX", correction_budget=1)
+        assert result in ["A", "T", "C", "G"]
+        assert exact is False
+
+    def test_algorithm_consistency_substring(self):
+        """Test that substring search results are consistent with regular search"""
+        entries = ["HELLO", "WORLD", "TEST"]
+        trie = PrefixTrie(entries, allow_indels=True)
+
+        # If we can find it with regular search, substring search should find it too
+        for entry in entries:
+            regular_result, regular_exact = trie.search(entry, correction_budget=0)
+            substring_result, substring_exact, start, end = trie.search_substring(entry, correction_budget=0)
+
+            assert regular_result == substring_result
+            assert regular_exact == substring_exact
+            if substring_result is not None:
+                assert start == 0
+                assert end == len(entry)
+
+        # Test with fuzzy matching
+        regular_result, regular_exact = trie.search("HALLO", correction_budget=1)
+        substring_result, substring_exact, start, end = trie.search_substring("HALLO", correction_budget=1)
+
+        # Both should find "HELLO" or both should find nothing
+        assert (regular_result is None) == (substring_result is None)
+        if regular_result is not None and substring_result is not None:
+            assert regular_result == substring_result
+            assert regular_exact == substring_exact
+
+
 def generate_barcodes(n: int, length: int = 16) -> list[str]:
     """Generate `n` deterministic barcodes of given length"""
     bases = "ACGT"
