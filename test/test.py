@@ -1,5 +1,6 @@
 import pytest
 import pyximport
+
 pyximport.install()
 from prefixtrie import PrefixTrie
 
@@ -10,28 +11,28 @@ class TestPrefixTrieBasic:
     def test_empty_trie(self):
         """Test creating an empty trie"""
         trie = PrefixTrie([])
-        result, exact = trie.search("test")
+        result, corrections = trie.search("test")
         assert result is None
-        assert exact is False
+        assert corrections == -1
         # Searching for an empty string in an empty trie should not report an
         # exact match.
-        result, exact = trie.search("")
+        result, corrections = trie.search("")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_single_entry(self):
         """Test trie with single entry"""
         trie = PrefixTrie(["hello"])
 
         # Exact match
-        result, exact = trie.search("hello")
+        result, corrections = trie.search("hello")
         assert result == "hello"
-        assert exact is True
+        assert corrections == 0
 
         # No match
-        result, exact = trie.search("world")
+        result, corrections = trie.search("world")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_multiple_entries(self):
         """Test trie with multiple entries"""
@@ -39,9 +40,9 @@ class TestPrefixTrieBasic:
         trie = PrefixTrie(entries)
 
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
     def test_trailing_and_missing_characters(self):
         """Ensure extra or missing characters are handled with indels"""
@@ -49,14 +50,14 @@ class TestPrefixTrieBasic:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Extra character at the end should count as a deletion
-        result, exact = trie.search("hello!", correction_budget=1)
+        result, corrections = trie.search("hello!", correction_budget=1)
         assert result == "hello"
-        assert exact is False
+        assert corrections == 1
 
         # Missing character should be handled as an insertion
-        result, exact = trie.search("hell", correction_budget=1)
+        result, corrections = trie.search("hell", correction_budget=1)
         assert result == "hello"
-        assert exact is False
+        assert corrections == 1
 
     def test_prefix_matching(self):
         """Test prefix-based matching"""
@@ -64,18 +65,18 @@ class TestPrefixTrieBasic:
         trie = PrefixTrie(entries)
 
         # Test exact matches for complete entries
-        result, exact = trie.search("test")
+        result, corrections = trie.search("test")
         assert result == "test"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact = trie.search("tea")
+        result, corrections = trie.search("tea")
         assert result == "tea"
-        assert exact is True
+        assert corrections == 0
 
         # Test that partial prefixes don't match without fuzzy search
-        result, exact = trie.search("te")
+        result, corrections = trie.search("te")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
 
 class TestPrefixTrieEdgeCases:
@@ -86,29 +87,29 @@ class TestPrefixTrieEdgeCases:
         # Empty strings may not be supported by this trie implementation
         trie = PrefixTrie(["hello", "world"])
 
-        result, exact = trie.search("")
+        result, corrections = trie.search("")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_single_character_entries(self):
         """Test with single character entries"""
         trie = PrefixTrie(["a", "b", "c"])
 
-        result, exact = trie.search("a")
+        result, corrections = trie.search("a")
         assert result == "a"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact = trie.search("d")
+        result, corrections = trie.search("d")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_duplicate_entries(self):
         """Test with duplicate entries"""
         trie = PrefixTrie(["hello", "hello", "world"])
 
-        result, exact = trie.search("hello")
+        result, corrections = trie.search("hello")
         assert result == "hello"
-        assert exact is True
+        assert corrections == 0
 
     def test_special_characters(self):
         """Test with special characters"""
@@ -116,34 +117,35 @@ class TestPrefixTrieEdgeCases:
         trie = PrefixTrie(entries)
 
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
     def test_case_sensitivity(self):
         """Test case sensitivity"""
         trie = PrefixTrie(["Hello", "hello", "HELLO"])
 
-        result, exact = trie.search("Hello")
+        result, corrections = trie.search("Hello")
         assert result == "Hello"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact = trie.search("hello")
+        result, corrections = trie.search("hello")
         assert result == "hello"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact = trie.search("HELLO")
+        result, corrections = trie.search("HELLO")
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
 
     def test_budget_increase_recomputes(self):
         trie = PrefixTrie(["hello"], allow_indels=True)
-        result, exact = trie.search("hallo", correction_budget=0)
-        assert result is None and exact is False
+        result, corrections = trie.search("hallo", correction_budget=0)
+        assert result is None and corrections == -1
 
         # With more corrections available, the match should now succeed
-        result, exact = trie.search("hallo", correction_budget=1)
-        assert result == "hello" and exact is False
+        result, corrections = trie.search("hallo", correction_budget=1)
+        assert result == "hello" and corrections == 1
+
 
 class TestPrefixTrieFuzzyMatching:
     """Test fuzzy matching capabilities"""
@@ -154,13 +156,13 @@ class TestPrefixTrieFuzzyMatching:
         trie = PrefixTrie(entries, allow_indels=False)
 
         # Test with 1 correction budget - single character substitution
-        result, exact = trie.search("hallo", correction_budget=1)  # e->a substitution
+        result, corrections = trie.search("hallo", correction_budget=1)  # e->a substitution
         assert result == "hello"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("worle", correction_budget=1)  # d->e substitution
+        result, corrections = trie.search("worle", correction_budget=1)  # d->e substitution
         assert result == "world"
-        assert exact is False
+        assert corrections == 1
 
     def test_fuzzy_matching_with_indels(self):
         """Test fuzzy matching with insertions and deletions"""
@@ -168,14 +170,14 @@ class TestPrefixTrieFuzzyMatching:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Test simple substitution that should work
-        result, exact = trie.search("hallo", correction_budget=1)
+        result, corrections = trie.search("hallo", correction_budget=1)
         assert result == "hello"
-        assert exact is False
+        assert corrections == 1
 
         # Test that we can find matches with small edits
-        result, exact = trie.search("worlx", correction_budget=1)
+        result, corrections = trie.search("worlx", correction_budget=1)
         assert result == "world"
-        assert exact is False
+        assert corrections == 1
 
     def test_correction_budget_limits(self):
         """Test that correction budget is respected"""
@@ -183,14 +185,14 @@ class TestPrefixTrieFuzzyMatching:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Should find with budget of 2
-        result, exact = trie.search("hallo", correction_budget=2)
+        result, corrections = trie.search("hallo", correction_budget=2)
         assert result == "hello"
-        assert exact is False
+        assert corrections > 0
 
         # Should not find with budget of 0
-        result, exact = trie.search("hallo", correction_budget=0)
+        result, corrections = trie.search("hallo", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_multiple_corrections(self):
         """Test queries requiring multiple corrections"""
@@ -198,14 +200,14 @@ class TestPrefixTrieFuzzyMatching:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Two substitutions
-        result, exact = trie.search("taxting", correction_budget=2)
+        result, corrections = trie.search("taxting", correction_budget=2)
         assert result == "testing"
-        assert exact is False
+        assert corrections == 2
 
         # Should not find with insufficient budget
-        result, exact = trie.search("taxting", correction_budget=1)
+        result, corrections = trie.search("taxting", correction_budget=1)
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
 
 class TestPrefixTriePerformance:
@@ -222,9 +224,9 @@ class TestPrefixTriePerformance:
         trie = PrefixTrie(entries)
 
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
     def test_long_strings(self):
         """Test with very long strings"""
@@ -232,9 +234,9 @@ class TestPrefixTriePerformance:
         entries = [long_string, long_string + "b"]
         trie = PrefixTrie(entries)
 
-        result, exact = trie.search(long_string)
+        result, corrections = trie.search(long_string)
         assert result == long_string
-        assert exact is True
+        assert corrections == 0
 
     def test_many_entries(self):
         """Test with many entries"""
@@ -244,9 +246,9 @@ class TestPrefixTriePerformance:
         # Test a few random entries
         test_entries = [entries[0], entries[500], entries[999]]
         for entry in test_entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
 
 class TestPrefixTrieDNASequences:
@@ -259,9 +261,9 @@ class TestPrefixTrieDNASequences:
 
         # Exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
     def test_dna_fuzzy_matching(self):
         """Test fuzzy matching with DNA sequences"""
@@ -269,19 +271,19 @@ class TestPrefixTrieDNASequences:
         trie = PrefixTrie(sequences, allow_indels=True)
 
         # Single base substitution
-        result, exact = trie.search("ACCT", correction_budget=1)
+        result, corrections = trie.search("ACCT", correction_budget=1)
         assert result == "ACGT"
-        assert exact is False
+        assert corrections == 1
 
         # Test with a clear mismatch that requires correction
-        result, exact = trie.search("ACXX", correction_budget=2)
+        result, corrections = trie.search("ACXX", correction_budget=2)
         assert result == "ACGT"
-        assert exact is False
+        assert corrections == 2
 
         # Test that fuzzy matching works with sufficient budget
-        result, exact = trie.search("TCXX", correction_budget=2)
+        result, corrections = trie.search("TCXX", correction_budget=2)
         assert result == "TCGA"
-        assert exact is False
+        assert corrections == 2
 
     def test_similar_sequences(self):
         """Test with very similar sequences"""
@@ -289,9 +291,9 @@ class TestPrefixTrieDNASequences:
         trie = PrefixTrie(sequences)
 
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
     def test_medium_length_dna_sequences(self):
         """Test with medium-length DNA sequences (20-50 bases)"""
@@ -309,14 +311,14 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching with single substitution
-        result, exact = trie.search("ATCGATCGATCGATCGATCX", correction_budget=1)
+        result, corrections = trie.search("ATCGATCGATCGATCGATCX", correction_budget=1)
         assert result == "ATCGATCGATCGATCGATCG"
-        assert exact is False
+        assert corrections == 1
 
     def test_long_dna_sequences(self):
         """Test with long DNA sequences (100+ bases)"""
@@ -334,9 +336,9 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
     def test_realistic_gene_sequences(self):
         """Test with realistic gene-like sequences"""
@@ -360,14 +362,14 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test mutation simulation (single nucleotide polymorphism)
-        result, exact = trie.search("ATGAAACGTCTAGCTAGCTAGCTAGCTAX", correction_budget=1)
+        result, corrections = trie.search("ATGAAACGTCTAGCTAGCTAGCTAGCTAX", correction_budget=1)
         assert result == "ATGAAACGTCTAGCTAGCTAGCTAGCTAG"
-        assert exact is False
+        assert corrections == 1
 
     def test_repetitive_dna_sequences(self):
         """Test with highly repetitive DNA sequences"""
@@ -388,17 +390,17 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test with a shorter repetitive sequence for fuzzy matching
         short_sequences = ["CACA", "GTGT", "ATAT"]
         short_trie = PrefixTrie(short_sequences, allow_indels=True)
 
-        result, exact = short_trie.search("CACX", correction_budget=1)
+        result, corrections = short_trie.search("CACX", correction_budget=1)
         assert result == "CACA"
-        assert exact is False
+        assert corrections == 1
 
     def test_mixed_length_dna_database(self):
         """Test with a mixed database of various length sequences"""
@@ -417,18 +419,18 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches for all lengths
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching across different lengths
-        result, exact = trie.search("ATCX", correction_budget=1)
+        result, corrections = trie.search("ATCX", correction_budget=1)
         assert result == "ATCG"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("ATCGATCGATCGATCX", correction_budget=1)
+        result, corrections = trie.search("ATCGATCGATCGATCX", correction_budget=1)
         assert result == "ATCGATCGATCGATCG"
-        assert exact is False
+        assert corrections == 1
 
     def test_dna_with_ambiguous_bases(self):
         """Test with sequences containing ambiguous DNA bases"""
@@ -442,9 +444,9 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
     def test_codon_sequences(self):
         """Test with codon-based sequences (triplets)"""
@@ -461,14 +463,14 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test single codon mutations
-        result, exact = trie.search("ATGAAATTTCCCGGT", correction_budget=1)  # G->T in last codon
+        result, corrections = trie.search("ATGAAATTTCCCGGT", correction_budget=1)  # G->T in last codon
         assert result == "ATGAAATTTCCCGGG"
-        assert exact is False
+        assert corrections == 1
 
     def test_extremely_long_sequences(self):
         """Test with extremely long DNA sequences (1000+ bases)"""
@@ -483,15 +485,15 @@ class TestPrefixTrieDNASequences:
 
         # Test exact matches
         for seq in sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching with very long sequences
         query = "ATCG" * 249 + "ATCX"  # 999 bases + ATCX
-        result, exact = trie.search(query, correction_budget=1)
+        result, corrections = trie.search(query, correction_budget=1)
         assert result == "ATCG" * 250
-        assert exact is False
+        assert corrections == 1
 
     def test_dna_performance_benchmark(self):
         """Performance test with many DNA sequences"""
@@ -511,9 +513,9 @@ class TestPrefixTrieDNASequences:
         # Test a subset for correctness
         test_sequences = sequences[::10]  # Every 10th sequence
         for seq in test_sequences:
-            result, exact = trie.search(seq)
+            result, corrections = trie.search(seq)
             assert result == seq
-            assert exact is True
+            assert corrections == 0
 
 
 class TestPrefixTrieDunderMethods:
@@ -562,9 +564,10 @@ class TestPrefixTrieErrorHandling:
         trie = PrefixTrie(["hello"])
 
         # Negative budget should be treated as 0
-        result, exact = trie.search("hallo", correction_budget=-1)
+        result, corrections = trie.search("hallo", correction_budget=-1)
         assert result is None
-        assert exact is False
+        assert corrections == -1
+
 
 class TestPrefixTrieAdvancedEdgeCases:
     """Test advanced edge cases and algorithm-specific scenarios"""
@@ -575,27 +578,27 @@ class TestPrefixTrieAdvancedEdgeCases:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Test insertions - query is shorter than target
-        result, exact = trie.search("hell", correction_budget=1)  # could be "hello" or "help" (both 1 edit)
+        result, corrections = trie.search("hell", correction_budget=1)  # could be "hello" or "help" (both 1 edit)
         assert result in ["hello", "help"]  # Both are valid with 1 edit
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("hel", correction_budget=1)  # missing 'p' to make "help"
+        result, corrections = trie.search("hel", correction_budget=1)  # missing 'p' to make "help"
         assert result == "help"
-        assert exact is False
+        assert corrections == 1
 
         # Test deletions - query is longer than target
-        result, exact = trie.search("helllo", correction_budget=1)  # extra 'l'
+        result, corrections = trie.search("helllo", correction_budget=1)  # extra 'l'
         assert result == "hello"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("helpx", correction_budget=1)  # extra 'x'
+        result, corrections = trie.search("helpx", correction_budget=1)  # extra 'x'
         assert result == "help"
-        assert exact is False
+        assert corrections == 1
 
         # Test substitutions
-        result, exact = trie.search("helo", correction_budget=1)  # 'o'->'p' substitution
+        result, corrections = trie.search("helo", correction_budget=1)  # 'o'->'p' substitution
         assert result == "help"  # This is correct - only 1 edit needed
-        assert exact is False
+        assert corrections == 1
 
     def test_complex_indel_combinations(self):
         """Test combinations of insertions, deletions, and substitutions"""
@@ -603,14 +606,14 @@ class TestPrefixTrieAdvancedEdgeCases:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Combination: deletion + substitution
-        result, exact = trie.search("algrothm", correction_budget=2)  # missing 'i', 'i'->'o'
+        result, corrections = trie.search("algrothm", correction_budget=2)  # missing 'i', 'i'->'o'
         assert result == "algorithm"
-        assert exact is False
+        assert corrections == 2
 
         # Combination: insertion + substitution
-        result, exact = trie.search("logxarithm", correction_budget=2)  # extra 'x', 'x'->'a'
+        result, corrections = trie.search("logxarithm", correction_budget=2)  # extra 'x', 'x'->'a'
         assert result == "logarithm"
-        assert exact is False
+        assert corrections == 2
 
     def test_prefix_collision_scenarios(self):
         """Test scenarios where prefixes collide and could cause issues"""
@@ -619,18 +622,18 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         # Exact matches should work
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Fuzzy matching should find closest match
-        result, exact = trie.search("aax", correction_budget=1)
+        result, corrections = trie.search("aax", correction_budget=1)
         assert result == "aaa"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("aaax", correction_budget=1)
+        result, corrections = trie.search("aaax", correction_budget=1)
         assert result == "aaaa"
-        assert exact is False
+        assert corrections == 1
 
     def test_shared_prefix_disambiguation(self):
         """Test disambiguation when multiple entries share long prefixes"""
@@ -642,18 +645,18 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         # Test exact matches
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching with shared prefixes
-        result, exact = trie.search("programmin", correction_budget=1)  # missing 'g'
+        result, corrections = trie.search("programmin", correction_budget=1)  # missing 'g'
         assert result == "programming"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("programmerz", correction_budget=1)  # 'z' instead of final char
+        result, corrections = trie.search("programmerz", correction_budget=1)  # 'z' instead of final char
         assert result == "programmer"
-        assert exact is False
+        assert corrections == 1
 
     def test_empty_and_very_short_queries(self):
         """Test behavior with empty and very short queries"""
@@ -661,42 +664,43 @@ class TestPrefixTrieAdvancedEdgeCases:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Empty query
-        result, exact = trie.search("", correction_budget=0)
+        result, corrections = trie.search("", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
-        result, exact = trie.search("", correction_budget=1)
+        result, corrections = trie.search("", correction_budget=1)
         assert result == "a"  # Should find shortest entry
-        assert exact is False
+        assert corrections == 1
 
         # Single character queries
-        result, exact = trie.search("x", correction_budget=1)
+        result, corrections = trie.search("x", correction_budget=1)
         assert result == "a"  # Should find closest single char
-        assert exact is False
+        assert corrections == 1
 
     def test_correction_budget_edge_cases(self):
         """Test edge cases around correction budget limits"""
         entries = ["test", "best", "rest", "nest"]
+        entries.sort()
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Exact budget limit
-        result, exact = trie.search("zest", correction_budget=1)  # 'z'->'t', 'e'->'e', 's'->'s', 't'->'t'
-        assert result == "test"
-        assert exact is False
+        result, corrections = trie.search("zest", correction_budget=1)  # 'z'->'t', 'e'->'e', 's'->'s', 't'->'t'
+        assert result == "best"
+        assert corrections == 1
 
         # Just over budget
-        result, exact = trie.search("zesz", correction_budget=1)  # needs 2 corrections
+        result, corrections = trie.search("zesz", correction_budget=1)  # needs 2 corrections
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
         # Zero budget should only find exact matches
-        result, exact = trie.search("test", correction_budget=0)
+        result, corrections = trie.search("test", correction_budget=0)
         assert result == "test"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact = trie.search("tesy", correction_budget=0)
+        result, corrections = trie.search("tesy", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_alphabet_boundary_conditions(self):
         """Test with characters at alphabet boundaries"""
@@ -705,36 +709,37 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         # Test exact matches
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching across character boundaries
-        result, exact = trie.search("aab", correction_budget=1)
+        result, corrections = trie.search("aab", correction_budget=1)
         assert result == "aaa"
-        assert exact is False
+        assert corrections == 1
 
-        result, exact = trie.search("zzy", correction_budget=1)
+        result, corrections = trie.search("zzy", correction_budget=1)
         assert result == "zzz"
-        assert exact is False
+        assert corrections == 1
 
     def test_collapsed_path_edge_cases(self):
         """Test edge cases with collapsed paths in the trie"""
         # Create entries that will cause path collapsing
         entries = ["abcdefghijk", "abcdefghijl", "xyz"]
+        entries.sort()
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching that might interact with collapsed paths
-        result, exact = trie.search("abcdefghijx", correction_budget=1)  # Last char different
+        result, corrections = trie.search("abcdefghijx", correction_budget=1)  # Last char different
         expected = "abcdefghijk"  # Should match first entry
         assert result == expected
-        assert exact is False
+        assert corrections == 1
 
     def test_memory_intensive_operations(self):
         """Test operations that might stress memory management"""
@@ -745,14 +750,14 @@ class TestPrefixTrieAdvancedEdgeCases:
         # Test a few random exact matches
         test_entries = [entries[0], entries[50], entries[99]]
         for entry in test_entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching
-        result, exact = trie.search("pattern050suffi", correction_budget=1)  # missing 'x'
+        result, corrections = trie.search("pattern050suffi", correction_budget=1)  # missing 'x'
         assert result == "pattern050suffix"
-        assert exact is False
+        assert corrections == 1
 
     def test_very_high_correction_budget(self):
         """Test with very high correction budgets"""
@@ -760,39 +765,41 @@ class TestPrefixTrieAdvancedEdgeCases:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Very high budget should still work correctly
-        result, exact = trie.search("x", correction_budget=100)
+        result, corrections = trie.search("x", correction_budget=100)
         assert result == "short"  # Should find shortest
-        assert exact is False
+        assert corrections > 0
 
-        result, exact = trie.search("completelydifferent", correction_budget=100)
+        result, corrections = trie.search("completelydifferent", correction_budget=100)
         assert result is not None  # Should find something
-        assert exact is False
+        assert corrections > 0
 
     def test_indel_vs_substitution_preference(self):
         """Test algorithm preference between indels and substitutions"""
         entries = ["abc", "abcd", "abce"]
+        entries.sort()
         trie = PrefixTrie(entries, allow_indels=True)
 
         # This query could match "abc" with 1 deletion or "abcd"/"abce" with 1 substitution
-        result, exact = trie.search("abcx", correction_budget=1)
+        result, corrections = trie.search("abcx", correction_budget=1)
         # The algorithm should prefer the substitution (keeping same length)
-        assert result in ["abcd", "abce"]
-        assert exact is False
+        assert result == "abcd"
+        assert corrections == 1
 
     def test_multiple_valid_corrections(self):
         """Test scenarios where multiple corrections have same cost"""
         entries = ["cat", "bat", "hat", "rat"]
+        entries.sort()
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that's 1 edit away from multiple entries
-        result, exact = trie.search("dat", correction_budget=1)
-        assert result in entries  # Should find one of them
-        assert exact is False
+        result, corrections = trie.search("dat", correction_budget=1)
+        assert result == "bat"
+        assert corrections == 1
 
         # With higher budget, should still work
-        result, exact = trie.search("zat", correction_budget=1)
-        assert result in entries
-        assert exact is False
+        result, corrections = trie.search("zat", correction_budget=1)
+        assert result == "bat"
+        assert corrections == 1
 
     def test_nested_prefix_structures(self):
         """Test deeply nested prefix structures"""
@@ -804,14 +811,14 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         # Test exact matches
         for entry in entries:
-            result, exact = trie.search(entry)
+            result, corrections = trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
         # Test fuzzy matching at different depths
-        result, exact = trie.search("abcdej", correction_budget=1)
+        result, corrections = trie.search("abcdej", correction_budget=1)
         assert result in ["abcdef", "abcdeg", "abcdeh", "abcdei"]
-        assert exact is False
+        assert corrections == 1
 
     def test_boundary_string_lengths(self):
         """Test with strings at various length boundaries"""
@@ -834,9 +841,9 @@ class TestPrefixTrieAdvancedEdgeCases:
         # Test exact matches for supported entries
         for entry in entries:
             if entry:  # Skip empty string
-                result, exact = trie.search(entry)
+                result, corrections = trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
 
     def test_cache_behavior_stress(self):
         """Test to stress the internal cache mechanisms"""
@@ -848,28 +855,35 @@ class TestPrefixTrieAdvancedEdgeCases:
 
         for _ in range(10):  # Repeat to test cache reuse
             for query in queries:
-                result, exact = trie.search(query, correction_budget=2)
+                result, corrections = trie.search(query, correction_budget=2)
                 assert result is not None
-                assert exact is False
+                assert corrections > 0
+
 
 class TestPrefixTrieAlgorithmCorrectness:
     """Test algorithm correctness for specific scenarios"""
 
     def test_edit_distance_calculation(self):
         """Test that edit distances are calculated correctly"""
-        entries = ["kitten", "sitting"]
+        entries = ["kitten"]
         trie = PrefixTrie(entries, allow_indels=True)
 
-        # "kitten" -> "sitting" requires 3 edits (k->s, e->i, insert g)
-        result, exact = trie.search("kitten", correction_budget=3)
-        assert result == "kitten"
-        assert exact is True
+        # "kitten" -> "sitting" requires 3 edits (k->s, e->i, insert g at the end)
 
-        # Should not find "sitting" with budget of 2 (needs 3 edits)
-        result, exact = trie.search("sitting", correction_budget=2)
-        # This should find "sitting" exactly since it's in the trie
-        assert result == "sitting"
-        assert exact is True
+        # Search for "sitting" with a budget of 2, should fail
+        result, corrections = trie.search("sitting", correction_budget=2)
+        assert result is None
+        assert corrections == -1
+
+        # Search with a budget of 3, should succeed and report 3 corrections
+        result, corrections = trie.search("sitting", correction_budget=3)
+        assert result == "kitten"
+        assert corrections == 3
+
+        # Searching for the exact word should yield 0 corrections
+        result, corrections = trie.search("kitten", correction_budget=3)
+        assert result == "kitten"
+        assert corrections == 0
 
     def test_optimal_alignment_selection(self):
         """Test that the algorithm selects optimal alignments"""
@@ -877,9 +891,9 @@ class TestPrefixTrieAlgorithmCorrectness:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that could align different ways
-        result, exact = trie.search("ACGA", correction_budget=2)
+        result, corrections = trie.search("ACGA", correction_budget=2)
         assert result in ["ACGT", "TGCA"]
-        assert exact is False
+        assert corrections > 0
 
     def test_backtracking_scenarios(self):
         """Test scenarios that might require backtracking in search"""
@@ -887,9 +901,10 @@ class TestPrefixTrieAlgorithmCorrectness:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Query that shares prefix with multiple entries
-        result, exact = trie.search("abcxef", correction_budget=2)
+        result, corrections = trie.search("abcxef", correction_budget=2)
         assert result in ["abcdef", "abcxyz"]
-        assert exact is False
+        assert corrections > 0
+
 
 class TestPrefixTrieSubstringSearch:
     """Test substring search functionality of PrefixTrie"""
@@ -900,30 +915,30 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Test exact matches
-        result, exact, start, end = trie.search_substring("HELLO", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("HELLO", correction_budget=0)
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
         assert start == 0
         assert end == 5
 
         # Test substring in middle
-        result, exact, start, end = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
         assert start == 4
         assert end == 9
 
         # Test at beginning
-        result, exact, start, end = trie.search_substring("HELLOAAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("HELLOAAAA", correction_budget=0)
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
         assert start == 0
         assert end == 5
 
         # Test at end
-        result, exact, start, end = trie.search_substring("AAAAHELLO", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAAHELLO", correction_budget=0)
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
         assert start == 4
         assert end == 9
 
@@ -933,16 +948,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # No match found
-        result, exact, start, end = trie.search_substring("AAAABBBBCCCC", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAABBBBCCCC", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
         # No match even with correction budget
-        result, exact, start, end = trie.search_substring("ZZZZXXXX", correction_budget=2)
+        result, corrections, start, end = trie.search_substring("ZZZZXXXX", correction_budget=2)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
@@ -952,16 +967,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Single substitution
-        result, exact, start, end = trie.search_substring("AAAHELOAAAA", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAAHELOAAAA", correction_budget=1)
         assert result == "HELLO"
-        assert exact is False
+        assert corrections == 1
         assert start == 3
         assert end == 7  # "HELO" spans positions 3-6, so end is 7
 
         # Single deletion (missing character)
-        result, exact, start, end = trie.search_substring("AAAHELLOAAAA", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAAHELLOAAAA", correction_budget=1)
         assert result == "HELLO"
-        assert exact is True  # This should be exact since HELLO is found exactly
+        assert corrections == 0  # This should be exact since HELLO is found exactly
         assert start == 3
         assert end == 8
 
@@ -971,16 +986,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Two substitutions
-        result, exact, start, end = trie.search_substring("AAAAALGROTHMAAA", correction_budget=2)
+        result, corrections, start, end = trie.search_substring("AAAAALGROTHMAAA", correction_budget=2)
         assert result == "ALGORITHM"
-        assert exact is False
+        assert corrections == 2
         assert start == 4
         assert end == 12  # "ALGROTHM" spans positions 4-11, so end is 12
 
         # Mixed corrections (substitution + insertion/deletion)
-        result, exact, start, end = trie.search_substring("BBBBTESTNGBBB", correction_budget=2)
+        result, corrections, start, end = trie.search_substring("BBBBTESTNGBBB", correction_budget=2)
         assert result == "TESTING"
-        assert exact is False
+        assert corrections > 0
         # The exact positions depend on the algorithm's alignment choice
 
     def test_overlapping_matches_substring(self):
@@ -989,14 +1004,14 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Should find the longest/best match
-        result, exact, start, end = trie.search_substring("AAATESTINGAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAATESTINGAAA", correction_budget=0)
         assert result in ["TEST", "TESTING", "EST"]  # Any of these could be valid
-        assert exact is True
+        assert corrections == 0
 
         # Test with fuzzy matching
-        result, exact, start, end = trie.search_substring("AAATESXINGAAA", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAATESXINGAAA", correction_budget=1)
         assert result in ["TEST", "TESTING"]  # Should prefer one of these
-        assert exact is False
+        assert corrections == 1
 
     def test_multiple_entries_in_target(self):
         """Test when target string contains multiple entries"""
@@ -1004,14 +1019,14 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Multiple entries present - should find one
-        result, exact, start, end = trie.search_substring("CATDOGBIRD", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("CATDOGBIRD", correction_budget=0)
         assert result in ["CAT", "DOG", "BIRD"]
-        assert exact is True
+        assert corrections == 0
 
         # Test with spacing
-        result, exact, start, end = trie.search_substring("AAACATAAADOGAAABIRD", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAACATAAADOGAAABIRD", correction_budget=0)
         assert result in ["CAT", "DOG", "BIRD"]
-        assert exact is True
+        assert corrections == 0
 
     def test_edge_cases_substring(self):
         """Test edge cases for substring search"""
@@ -1019,25 +1034,25 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Empty target string
-        result, exact, start, end = trie.search_substring("", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
         # Single character target
-        result, exact, start, end = trie.search_substring("A", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("A", correction_budget=0)
         assert result == "A"
-        assert exact is True
+        assert corrections == 0
         assert start == 0
         assert end == 1
 
         # Target shorter than all entries
         short_entries = ["HELLO", "WORLD"]
         short_trie = PrefixTrie(short_entries, allow_indels=True)
-        result, exact, start, end = short_trie.search_substring("HI", correction_budget=0)
+        result, corrections, start, end = short_trie.search_substring("HI", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_correction_budget_limits_substring(self):
         """Test that correction budget is properly respected in substring search"""
@@ -1045,14 +1060,14 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Should find with sufficient budget
-        result, exact, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=2)
+        result, corrections, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=2)
         assert result == "HELLO"
-        assert exact is False
+        assert corrections == 2
 
         # Should not find with insufficient budget
-        result, exact, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAAHALLAOOO", correction_budget=1)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
@@ -1062,16 +1077,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(sequences, allow_indels=True)
 
         # Exact DNA match
-        result, exact, start, end = trie.search_substring("AAAAATCGAAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAAATCGAAAA", correction_budget=0)
         assert result == "ATCG"
-        assert exact is True
+        assert corrections == 0
         assert start == 4
         assert end == 8
 
         # DNA with single base substitution
-        result, exact, start, end = trie.search_substring("AAAAATCAAAAA", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAAAATCAAAAA", correction_budget=1)
         assert result == "ATCG"
-        assert exact is False
+        assert corrections == 1
         assert start == 4
         assert end == 8  # "ATCA" spans positions 4-7, so end is 8
 
@@ -1086,17 +1101,17 @@ class TestPrefixTrieSubstringSearch:
 
         # Exact match in long string
         target = "NNNNATCGATCGATCGNNNN"
-        result, exact, start, end = trie.search_substring(target, correction_budget=0)
+        result, corrections, start, end = trie.search_substring(target, correction_budget=0)
         assert result == "ATCGATCGATCG"
-        assert exact is True
+        assert corrections == 0
         assert start == 4
         assert end == 16
 
         # Fuzzy match with mutations
         target_fuzzy = "NNNNATCGATCGATCANNNN"  # G->A mutation at end
-        result, exact, start, end = trie.search_substring(target_fuzzy, correction_budget=1)
+        result, corrections, start, end = trie.search_substring(target_fuzzy, correction_budget=1)
         assert result == "ATCGATCGATCG"
-        assert exact is False
+        assert corrections == 1
         assert start == 4
         assert end == 16  # "ATCGATCGATCA" spans positions 4-15, so end is 16
 
@@ -1106,16 +1121,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(proteins, allow_indels=True)
 
         # Exact protein match
-        result, exact, start, end = trie.search_substring("XXXMKLLFYXXX", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("XXXMKLLFYXXX", correction_budget=0)
         assert result == "MKLLFY"
-        assert exact is True
+        assert corrections == 0
         assert start == 3
         assert end == 9
 
         # Protein with amino acid substitution
-        result, exact, start, end = trie.search_substring("XXXMKLLAYXXX", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("XXXMKLLAYXXX", correction_budget=1)
         assert result == "MKLLFY"
-        assert exact is False
+        assert corrections == 1
         assert start == 3
         assert end == 9
 
@@ -1126,9 +1141,9 @@ class TestPrefixTrieSubstringSearch:
 
         # Large target string with match at end
         large_target = "X" * 1000 + "NEEDLE" + "Y" * 1000
-        result, exact, start, end = trie.search_substring(large_target, correction_budget=0)
+        result, corrections, start, end = trie.search_substring(large_target, correction_budget=0)
         assert result == "NEEDLE"
-        assert exact is True
+        assert corrections == 0
         assert start == 1000
         assert end == 1006
 
@@ -1138,16 +1153,16 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Special characters exact match
-        result, exact, start, end = trie.search_substring("AAA@test#BBB", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAA@test#BBB", correction_budget=0)
         assert result == "@test#"
-        assert exact is True
+        assert corrections == 0
         assert start == 3
         assert end == 9
 
         # Special characters with fuzzy match
-        result, exact, start, end = trie.search_substring("AAAhelloBBB", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("AAAhelloBBB", correction_budget=1)
         assert result == "hello!"
-        assert exact is False
+        assert corrections == 1
         assert start == 3
         assert end == 9  # "hello" spans positions 3-7, but algorithm may find "hellob" spans 3-8, so end is 9
 
@@ -1157,17 +1172,17 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Exact case matches
-        result, exact, start, end = trie.search_substring("AAAHelloAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAHelloAAA", correction_budget=0)
         assert result == "Hello"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact, start, end = trie.search_substring("AAAHELLOAAa", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAHELLOAAa", correction_budget=0)
         assert result == "HELLO"
-        assert exact is True
+        assert corrections == 0
 
-        result, exact, start, end = trie.search_substring("AAAhelloAAA", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("AAAhelloAAA", correction_budget=0)
         assert result == "hello"
-        assert exact is True
+        assert corrections == 0
 
     def test_boundary_positions_substring(self):
         """Test substring matches at string boundaries"""
@@ -1175,23 +1190,23 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Match at very beginning
-        result, exact, start, end = trie.search_substring("STARTXXX", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("STARTXXX", correction_budget=0)
         assert result == "START"
-        assert exact is True
+        assert corrections == 0
         assert start == 0
         assert end == 5
 
         # Match at very end
-        result, exact, start, end = trie.search_substring("XXXEND", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("XXXEND", correction_budget=0)
         assert result == "END"
-        assert exact is True
+        assert corrections == 0
         assert start == 3
         assert end == 6
 
         # Exact string match (target == entry)
-        result, exact, start, end = trie.search_substring("START", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("START", correction_budget=0)
         assert result == "START"
-        assert exact is True
+        assert corrections == 0
         assert start == 0
         assert end == 5
 
@@ -1201,29 +1216,29 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Repetitive target with exact match
-        result, exact, start, end = trie.search_substring("ABABABABAB", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("ABABABABAB", correction_budget=0)
         assert result == "ABAB"
-        assert exact is True
+        assert corrections == 0
         # Could match at position 0-4, 2-6, 4-8, or 6-10
 
         # Repetitive with single error - use a string where ABAB needs 1 correction
-        result, exact, start, end = trie.search_substring("XXABXBXX", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("XXABXBXX", correction_budget=1)
         assert result == "ABAB"
-        assert exact is False
+        assert corrections > 0
 
     def test_empty_trie_substring(self):
         """Test substring search with empty trie"""
         trie = PrefixTrie([], allow_indels=True)
 
-        result, exact, start, end = trie.search_substring("ANYTARGET", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("ANYTARGET", correction_budget=0)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
-        result, exact, start, end = trie.search_substring("ANYTARGET", correction_budget=5)
+        result, corrections, start, end = trie.search_substring("ANYTARGET", correction_budget=5)
         assert result is None
-        assert exact is False
+        assert corrections == -1
         assert start == -1
         assert end == -1
 
@@ -1233,14 +1248,14 @@ class TestPrefixTrieSubstringSearch:
         trie = PrefixTrie(entries, allow_indels=True)
 
         # Single character matches
-        result, exact, start, end = trie.search_substring("XAXBXCXDX", correction_budget=0)
+        result, corrections, start, end = trie.search_substring("XAXBXCXDX", correction_budget=0)
         assert result in ["A", "C"]  # Could match either
-        assert exact is True
+        assert corrections == 0
 
         # Fuzzy single character match
-        result, exact, start, end = trie.search_substring("XXXXXX", correction_budget=1)
+        result, corrections, start, end = trie.search_substring("XXXXXX", correction_budget=1)
         assert result in ["A", "T", "C", "G"]
-        assert exact is False
+        assert corrections > 0
 
     def test_algorithm_consistency_substring(self):
         """Test that substring search results are consistent with regular search"""
@@ -1249,24 +1264,24 @@ class TestPrefixTrieSubstringSearch:
 
         # If we can find it with regular search, substring search should find it too
         for entry in entries:
-            regular_result, regular_exact = trie.search(entry, correction_budget=0)
-            substring_result, substring_exact, start, end = trie.search_substring(entry, correction_budget=0)
+            regular_result, regular_corrections = trie.search(entry, correction_budget=0)
+            substring_result, substring_corrections, start, end = trie.search_substring(entry, correction_budget=0)
 
             assert regular_result == substring_result
-            assert regular_exact == substring_exact
+            assert regular_corrections == substring_corrections
             if substring_result is not None:
                 assert start == 0
                 assert end == len(entry)
 
         # Test with fuzzy matching
-        regular_result, regular_exact = trie.search("HALLO", correction_budget=1)
-        substring_result, substring_exact, start, end = trie.search_substring("HALLO", correction_budget=1)
+        regular_result, regular_corrections = trie.search("HALLO", correction_budget=1)
+        substring_result, substring_corrections, start, end = trie.search_substring("HALLO", correction_budget=1)
 
         # Both should find "HELLO" or both should find nothing
         assert (regular_result is None) == (substring_result is None)
         if regular_result is not None and substring_result is not None:
             assert regular_result == substring_result
-            assert regular_exact == substring_exact
+            assert regular_corrections == substring_corrections
 
 
 def generate_barcodes(n: int, length: int = 16) -> list[str]:
@@ -1293,9 +1308,9 @@ class TestLargeWhitelist:
         # Spot check a few barcodes for exact match
         samples = [barcodes[0], barcodes[123], barcodes[9999], barcodes[5000], barcodes[7777]]
         for bc in samples:
-            result, exact = trie.search(bc)
+            result, corrections = trie.search(bc)
             assert result == bc
-            assert exact is True
+            assert corrections == 0
 
         # Mutate a high-order position to ensure it is not already in whitelist
         for idx, pos in [(42, 12), (123, 8), (9999, 15), (5000, 0), (7777, 5)]:
@@ -1304,9 +1319,9 @@ class TestLargeWhitelist:
             mutated = original[:pos] + replacement + original[pos + 1:]
             if mutated in barcodes:
                 continue  # Skip if mutated barcode is already in whitelist
-            result, exact = trie.search(mutated, correction_budget=1)
+            result, corrections = trie.search(mutated, correction_budget=1)
             assert result == original
-            assert exact is False
+            assert corrections == 1
 
 
 if __name__ == "__main__":
@@ -1315,12 +1330,12 @@ if __name__ == "__main__":
 
     # Basic functionality test
     trie = PrefixTrie(["hello", "world", "test"])
-    result, exact = trie.search("hello")
-    assert result == "hello" and exact is True
+    result, corrections = trie.search("hello")
+    assert result == "hello" and corrections == 0
 
     # Fuzzy matching test
     trie_fuzzy = PrefixTrie(["hello"], allow_indels=True)
-    result, exact = trie_fuzzy.search("hllo", correction_budget=1)
-    assert result == "hello" and exact is False
+    result, corrections = trie_fuzzy.search("hllo", correction_budget=1)
+    assert result == "hello" and corrections == 1
 
     print("Smoke test passed! Run 'pytest test.py' for full test suite.")

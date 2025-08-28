@@ -216,7 +216,7 @@ def validate_results_consistency(patterns: list[str], pt_results: list, fs_resul
     inconsistencies = []
 
     for i, (pt_result, fs_result) in enumerate(zip(pt_results, fs_results)):
-        pt_found, pt_exact, pt_start, pt_end = pt_result
+        pt_found, pt_corrections, pt_start, pt_end = pt_result
         fs_found, fs_exact, fs_start, fs_end = fs_result
 
         # Check if found patterns are valid

@@ -60,8 +60,8 @@ def large_trie_worker(args):
     count = 0
     for i in range(start_idx, end_idx):
         query = f"entry_{i:04d}"
-        result, exact = trie.search(query)
-        if result == query and exact:
+        result, corrections = trie.search(query)
+        if result == query and corrections == 0:
             count += 1
     return count
 
@@ -147,9 +147,9 @@ class TestPrefixTriePickle:
 
         # Test functionality
         for entry in entries:
-            result, exact = restored_trie.search(entry)
+            result, corrections = restored_trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
             assert entry in restored_trie
             assert restored_trie[entry] == entry
 
@@ -163,13 +163,13 @@ class TestPrefixTriePickle:
         restored_trie = pickle.loads(pickled_data)
 
         # Test fuzzy search
-        result, exact = restored_trie.search("algrothm", correction_budget=2)
+        result, corrections = restored_trie.search("algrothm", correction_budget=2)
         assert result == "algorithm"
-        assert exact is False
+        assert corrections == 2
 
-        result, exact = restored_trie.search("rythem", correction_budget=2)
+        result, corrections = restored_trie.search("rythem", correction_budget=2)
         assert result == "rhythm"
-        assert exact is False
+        assert corrections > 0
 
     def test_pickle_different_protocols(self):
         """Test pickle with different protocol versions"""
@@ -184,9 +184,9 @@ class TestPrefixTriePickle:
             # Verify functionality
             assert len(restored_trie) == len(trie)
             for entry in entries:
-                result, exact = restored_trie.search(entry)
+                result, corrections = restored_trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
 
     def test_pickle_empty_trie(self):
         """Test pickle with empty trie"""
@@ -196,9 +196,9 @@ class TestPrefixTriePickle:
         restored_trie = pickle.loads(pickled_data)
 
         assert len(restored_trie) == 0
-        result, exact = restored_trie.search("anything")
+        result, corrections = restored_trie.search("anything")
         assert result is None
-        assert exact is False
+        assert corrections == -1
 
     def test_pickle_large_trie(self):
         """Test pickle with large trie"""
@@ -213,9 +213,9 @@ class TestPrefixTriePickle:
         # Test a few entries
         test_entries = [entries[0], entries[500], entries[999]]
         for entry in test_entries:
-            result, exact = restored_trie.search(entry)
+            result, corrections = restored_trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
     def test_pickle_to_file(self):
         """Test pickle serialization to file"""
@@ -233,9 +233,9 @@ class TestPrefixTriePickle:
             # Verify functionality
             assert len(restored_trie) == len(trie)
             for entry in entries:
-                result, exact = restored_trie.search(entry)
+                result, corrections = restored_trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
         finally:
             os.unlink(filename)
 
@@ -339,11 +339,11 @@ class TestPrefixTriePickle:
         assert len(restored_container["trie_copy"]) == len(trie)
 
         # Both trie references should work
-        result, exact = restored_container["trie"].search("circular")
-        assert result == "circular" and exact is True
+        result, corrections = restored_container["trie"].search("circular")
+        assert result == "circular" and corrections == 0
 
-        result, exact = restored_container["trie_copy"].search("reference")
-        assert result == "reference" and exact is True
+        result, corrections = restored_container["trie_copy"].search("reference")
+        assert result == "reference" and corrections == 0
 
     def test_pickle_with_custom_objects(self):
         """Test pickle interaction with custom objects containing tries"""
@@ -367,8 +367,8 @@ class TestPrefixTriePickle:
         assert restored_wrapper.metadata == wrapper.metadata
 
         # Verify trie functionality
-        result, exact = restored_wrapper.search("wrapper")
-        assert result == "wrapper" and exact is True
+        result, corrections = restored_wrapper.search("wrapper")
+        assert result == "wrapper" and corrections == 0
         assert restored_wrapper.search_count == initial_count + 1
 
     def test_pickle_error_handling(self):
@@ -392,8 +392,8 @@ class TestPrefixTriePickle:
             pickle.loads(truncated_data)
 
         # Test that original trie still works after failed unpickling attempts
-        result, exact = trie.search("error")
-        assert result == "error" and exact is True
+        result, corrections = trie.search("error")
+        assert result == "error" and corrections == 0
 
     def test_pickle_version_compatibility(self):
         """Test pickle data compatibility across versions"""
@@ -413,8 +413,8 @@ class TestPrefixTriePickle:
 
             # Test functionality
             for entry in entries:
-                result, exact = restored_trie.search(entry)
-                assert result == entry and exact is True
+                result, corrections = restored_trie.search(entry)
+                assert result == entry and corrections == 0
 
     def test_pickle_thread_safety_simulation(self):
         """Test pickle in scenarios that simulate thread safety concerns"""
@@ -438,8 +438,8 @@ class TestPrefixTriePickle:
         for restored_trie in restored_tries:
             assert len(restored_trie) == len(trie)
             for entry in entries:
-                result, exact = restored_trie.search(entry)
-                assert result == entry and exact is True
+                result, corrections = restored_trie.search(entry)
+                assert result == entry and corrections == 0
 
     def test_pickle_with_deepcopy(self):
         """Test interaction between pickle and deepcopy"""
@@ -457,8 +457,8 @@ class TestPrefixTriePickle:
         # Verify all versions work
         for test_trie in [trie, copied_trie, restored_copy]:
             for entry in entries:
-                result, exact = test_trie.search(entry)
-                assert result == entry and exact is True
+                result, corrections = test_trie.search(entry)
+                assert result == entry and corrections == 0
 
     def test_pickle_performance_large_data(self):
         """Test pickle performance with large data sets"""
@@ -484,8 +484,8 @@ class TestPrefixTriePickle:
         test_indices = [0, 100, 500, 999]
         for i in test_indices:
             entry = entries[i]
-            result, exact = restored_trie.search(entry)
-            assert result == entry and exact is True
+            result, corrections = restored_trie.search(entry)
+            assert result == entry and corrections == 0
 
         # Basic performance assertions (these are quite lenient)
         assert pickle_time < 10.0  # Should pickle in under 10 seconds
@@ -510,9 +510,9 @@ class TestPrefixTrieMultiprocessing:
                 results.append(result)
 
             for i, result in enumerate(results):
-                found, exact = result.get(timeout=10)
+                found, corrections = result.get(timeout=10)
                 assert found == entries[i]
-                assert exact is True
+                assert corrections == 0
 
     def test_multiprocessing_fuzzy_search(self):
         """Test fuzzy search in multiprocessing context"""
@@ -523,21 +523,21 @@ class TestPrefixTrieMultiprocessing:
         with mp.Pool(processes=2) as pool:
             # Test fuzzy searches
             test_cases = [
-                ("paralel", 1, "parallel"),  # missing 'l'
-                ("procesing", 1, "processing"),  # missing 's'
-                ("fuzy", 1, "fuzzy"),  # missing 'z'
-                ("serch", 1, "search"),  # missing 'a'
+                ("paralel", 1, "parallel", 1),
+                ("procesing", 1, "processing", 1),
+                ("fuzy", 1, "fuzzy", 1),
+                ("serch", 1, "search", 1),
             ]
 
             results = []
-            for query, budget, expected in test_cases:
+            for query, budget, expected, expected_corrections in test_cases:
                 result = pool.apply_async(fuzzy_worker, (trie, query, budget))
-                results.append((result, expected))
+                results.append((result, expected, expected_corrections))
 
-            for result, expected in results:
-                found, exact = result.get(timeout=10)
+            for result, expected, expected_corrections in results:
+                found, corrections = result.get(timeout=10)
                 assert found == expected
-                assert exact is False
+                assert corrections == expected_corrections
 
     def test_multiprocessing_map(self):
         """Test using PrefixTrie with multiprocessing.Pool.map"""
@@ -554,10 +554,10 @@ class TestPrefixTrieMultiprocessing:
 
         # Verify results
         expected = [
-            ("map", True),
-            ("function", True),
-            ("test", True),
-            (None, False)
+            ("map", 0),
+            ("function", 0),
+            ("test", 0),
+            (None, -1)
         ]
 
         assert results == expected
@@ -581,11 +581,11 @@ class TestPrefixTrieMultiprocessing:
 
         # Verify results
         expected_found = ["starmap", "operation", "testing", "starmap"]
-        expected_exact = [True, True, False, False]
+        expected_corrections = [0, 0, 1, 1]
 
-        for i, (found, exact) in enumerate(results):
+        for i, (found, corrections) in enumerate(results):
             assert found == expected_found[i]
-            assert exact == expected_exact[i]
+            assert corrections == expected_corrections[i]
 
     def test_shared_trie_multiple_processes(self):
         """Test sharing the same trie across multiple processes"""
@@ -611,7 +611,7 @@ class TestPrefixTrieMultiprocessing:
         for batch in batch_results:
             all_results.extend(batch)
 
-        expected = [(query, True) for query in all_queries]
+        expected = [(query, 0) for query in all_queries]
         assert all_results == expected
 
     def test_process_with_different_trie_configs(self):
@@ -627,9 +627,9 @@ class TestPrefixTrieMultiprocessing:
             results = pool.map(config_worker, configs)
 
         expected = [
-            ("exact", True),
-            ("fuzzy", False),
-            ("another", False)
+            ("exact", 0),
+            ("fuzzy", 1),
+            ("another", 1)
         ]
 
         assert results == expected
@@ -678,9 +678,9 @@ class TestPrefixTrieSharedMemory:
             assert loaded_trie.allow_indels == trie.allow_indels
 
             for entry in entries:
-                result, exact = loaded_trie.search(entry)
+                result, corrections = loaded_trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
         finally:
             trie.cleanup_shared_memory()
 
@@ -699,9 +699,9 @@ class TestPrefixTrieSharedMemory:
             assert loaded_trie.allow_indels == trie.allow_indels
 
             for entry in entries:
-                result, exact = loaded_trie.search(entry)
+                result, corrections = loaded_trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
         finally:
             trie.cleanup_shared_memory()
 
@@ -714,13 +714,13 @@ class TestPrefixTrieSharedMemory:
             loaded_trie = load_shared_trie(shm_name)
 
             # Test fuzzy search
-            result, exact = loaded_trie.search("algrothm", correction_budget=2)
+            result, corrections = loaded_trie.search("algrothm", correction_budget=2)
             assert result == "algorithm"
-            assert exact is False
+            assert corrections == 2
 
-            result, exact = loaded_trie.search("rythem", correction_budget=2)
+            result, corrections = loaded_trie.search("rythem", correction_budget=2)
             assert result == "rhythm"
-            assert exact is False
+            assert corrections > 0
         finally:
             trie.cleanup_shared_memory()
 
@@ -738,7 +738,7 @@ class TestPrefixTrieSharedMemory:
                     results.append(result)
 
                 # Verify all workers got correct results
-                expected = [("shared", True), ("memory", True), ("multiprocessing", True)]
+                expected = [("shared", 0), ("memory", 0), ("multiprocessing", 0)]
                 for result in results:
                     worker_results = result.get(timeout=10)
                     assert worker_results == expected
@@ -753,21 +753,21 @@ class TestPrefixTrieSharedMemory:
         try:
             with mp.Pool(processes=2) as pool:
                 test_cases = [
-                    (shm_name, "paralel", 1, "parallel"),  # missing 'l'
-                    (shm_name, "procesing", 1, "processing"),  # missing 's'
-                    (shm_name, "fuzy", 1, "fuzzy"),  # missing 'z'
-                    (shm_name, "serch", 1, "search"),  # missing 'a'
+                    (shm_name, "paralel", 1, "parallel", 1),
+                    (shm_name, "procesing", 1, "processing", 1),
+                    (shm_name, "fuzy", 1, "fuzzy", 1),
+                    (shm_name, "serch", 1, "search", 1),
                 ]
 
                 results = []
                 for args in test_cases:
                     result = pool.apply_async(shared_memory_fuzzy_worker, (args[:3],))
-                    results.append((result, args[3]))
+                    results.append((result, args[3], args[4]))
 
-                for result, expected in results:
-                    found, exact = result.get(timeout=10)
+                for result, expected, expected_corrections in results:
+                    found, corrections = result.get(timeout=10)
                     assert found == expected
-                    assert exact is False
+                    assert corrections == expected_corrections
         finally:
             trie.cleanup_shared_memory()
 
@@ -796,7 +796,7 @@ class TestPrefixTrieSharedMemory:
                 for batch_result in results:
                     all_results.extend(batch_result)
 
-                expected_results = [(entry, True) for entry in entries]
+                expected_results = [(entry, 0) for entry in entries]
                 assert all_results == expected_results
         finally:
             trie.cleanup_shared_memory()
@@ -817,7 +817,7 @@ class TestPrefixTrieSharedMemory:
                 # Verify all tasks complete successfully
                 # shared_memory_worker searches for ["shared", "memory", "multiprocessing"]
                 # but our trie has ["concurrent", "access", "test", "shared", "memory"]
-                expected = [("shared", True), ("memory", True), (None, False)]  # "multiprocessing" not in trie
+                expected = [("shared", 0), ("memory", 0), (None, -1)]  # "multiprocessing" not in trie
 
                 results = [task.get(timeout=10) for task in tasks]
 
@@ -840,9 +840,9 @@ class TestPrefixTrieSharedMemory:
             loaded_trie = load_shared_trie(custom_name)
 
             for entry in entries:
-                result, exact = loaded_trie.search(entry)
+                result, corrections = loaded_trie.search(entry)
                 assert result == entry
-                assert exact is True
+                assert corrections == 0
         finally:
             trie.cleanup_shared_memory()
 
@@ -853,7 +853,7 @@ class TestPrefixTrieSharedMemory:
 
         # Verify shared memory exists
         loaded_trie = load_shared_trie(shm_name)
-        result, exact = loaded_trie.search("cleanup")
+        result, corrections = loaded_trie.search("cleanup")
         assert result == "cleanup"
 
         # Clean up
@@ -908,9 +908,9 @@ class TestPrefixTrieSharedMemory:
         assert restored_trie.allow_indels == trie.allow_indels
 
         for entry in entries:
-            result, exact = restored_trie.search(entry)
+            result, corrections = restored_trie.search(entry)
             assert result == entry
-            assert exact is True
+            assert corrections == 0
 
 
 # Update the shared_memory_worker to use the correct entries
@@ -933,11 +933,11 @@ if __name__ == "__main__":
     pickled = pickle.dumps(trie)
     restored = pickle.loads(pickled)
 
-    result, exact = restored.search("hello")
-    assert result == "hello" and exact is True
+    result, corrections = restored.search("hello")
+    assert result == "hello" and corrections == 0
 
-    result, exact = restored.search("helo", correction_budget=1)
-    assert result == "hello" and exact is False
+    result, corrections = restored.search("helo", correction_budget=1)
+    assert result == "hello" and corrections == 1
 
     print("Pickle smoke test passed!")
 
@@ -947,7 +947,7 @@ if __name__ == "__main__":
     try:
         with mp.Pool(processes=1) as pool:
             result = pool.apply(simple_worker, (trie,))
-            assert result == ("world", True)
+            assert result == ("world", 0)
         print("Multiprocessing smoke test passed!")
     except Exception as e:
         print(f"Multiprocessing test failed: {e}")

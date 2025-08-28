@@ -14,6 +14,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
+    import pyximport
+    pyximport.install()
     from prefixtrie import PrefixTrie
     print("✓ PrefixTrie imported successfully")
 except ImportError as e:
@@ -107,7 +109,7 @@ def validate_trie_consistency(entries: list[str], trie_results: list[tuple], tes
     entries_set = set(entries)
     inconsistencies = []
 
-    for i, (result, exact) in enumerate(trie_results):
+    for i, (result, corrections) in enumerate(trie_results):
         if result is not None:
             # If result is found, it should be in the original entries
             if result not in entries_set:
@@ -179,8 +181,8 @@ def benchmark_prefixtrie(entries, queries, allow_indels=True, correction_budget=
     start_search = time.perf_counter()
     results = []
     for query in queries:
-        result, exact = trie.search(query, correction_budget=correction_budget)
-        results.append((result, exact))
+        result, corrections = trie.search(query, correction_budget=correction_budget)
+        results.append((result, corrections))
     search_time = time.perf_counter() - start_search
 
     return results, build_time, search_time

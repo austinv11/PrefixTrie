@@ -165,27 +165,27 @@ class PrefixTrie:
             # Object may not be fully initialized
             pass
 
-    def search(self, item: str, correction_budget: int=0) -> tuple[str | None, bool]:
+    def search(self, item: str, correction_budget: int=0) -> tuple[str | None, int]:
         """
         Search for an item in the trie with optional corrections.
         :param item: The string to search for in the trie.
         :param correction_budget: Maximum number of corrections allowed (default is 0).
-        :return: A tuple containing the found item and a boolean indicating if it was an exact match.
+        :return: A tuple containing the found item and the number of corrections, or (None, -1) if not found.
         """
         # Ultra-fast exact matching using Python set (bypasses all Cython overhead)
         if correction_budget == 0:
             # For exact matching, use pure Python set lookup - fastest possible
-            return (item, True) if item in self._exact_set else (None, False)
+            return (item, 0) if item in self._exact_set else (None, -1)
 
         # For fuzzy matching, first check if it's an exact match in the set
         if item in self._exact_set:
-            return (item, True)
+            return (item, 0)
 
         # Use trie for fuzzy matching only when needed
-        found, exact = self._trie.search(item, correction_budget)
-        return found, exact
+        found, corrections = self._trie.search(item, correction_budget)
+        return found, corrections
 
-    def search_substring(self, target_string: str, correction_budget: int=0) -> tuple[str | None, bool, int, int]:
+    def search_substring(self, target_string: str, correction_budget: int=0) -> tuple[str | None, int, int, int]:
         """
         Search for fuzzy substring matches of trie entries within a target string.
 
@@ -194,16 +194,16 @@ class PrefixTrie:
 
         :param target_string: The string to search within for trie entries
         :param correction_budget: Maximum number of edits allowed (default is 0)
-        :return: Tuple of (found_string, exact_match, start_pos, end_pos) or (None, False, -1, -1)
+        :return: Tuple of (found_string, corrections, start_pos, end_pos) or (None, -1, -1, -1)
                  where start_pos and end_pos indicate the location of the match in target_string
 
         Example:
             >>> trie = PrefixTrie(["HELLO", "WORLD"], allow_indels=True)
             >>> result = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
-            >>> # Returns: ("HELLO", True, 4, 9)
+            >>> # Returns: ("HELLO", 0, 4, 9)
 
             >>> result = trie.search_substring("AAAHELOAAAA", correction_budget=1)
-            >>> # Returns: ("HELLO", False, 3, 8) - found with 1 substitution
+            >>> # Returns: ("HELLO", 1, 3, 8) - found with 1 substitution
         """
         return self._trie.search_substring(target_string, correction_budget)
 
@@ -217,7 +217,7 @@ class PrefixTrie:
         if item in self._exact_set:
             return True
 
-        found, exact = self._trie.search(item)
+        found, _ = self._trie.search(item)
         return found is not None
 
     def __iter__(self):
@@ -254,7 +254,7 @@ class PrefixTrie:
         :param item: The string to retrieve from the trie.
         :return: The item if found, otherwise raises KeyError.
         """
-        found, exact = self._trie.search(item)
+        found, _ = self._trie.search(item)
         if found is None:
             raise KeyError(f"{item} not found in PrefixTrie")
         return found

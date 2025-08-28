@@ -407,7 +407,14 @@ cdef class cPrefixTrie:
         return child_bounds
 
 
-    cpdef tuple[str, bint] search(self, str query, int correction_budget=0):
+    cpdef tuple[str, int] search(self, str query, int correction_budget=0):
+        """
+        Search for a query in the trie, allowing for a specified number of corrections.
+        :param query: The query string to search for.
+        :param correction_budget: The maximum number of corrections allowed.
+        :return: A tuple containing the found string and the number of corrections,
+                 or (None, -1) if no match is found.
+        """
         cdef Str c_query = py_str_to_c_str(query)
         cdef str found_str_py = None
         cdef size_t query_len = strlen(c_query)
@@ -419,44 +426,41 @@ cdef class cPrefixTrie:
                 st, self.root, c_query, query_len,
                 0, 0, correction_budget, self.allow_indels, False
             )
+        cache_free(st)
+        free(c_query)
         if res.found:
             found_str_py = c_str_to_py_str(res.found_str)
-        cdef bint exact = res.found and (res.corrections == 0)
-        cache_free(st)  # frees all owned SearchResult*
-        free(c_query)
-        return (found_str_py, exact)
+            return found_str_py, res.corrections
+        return None, -1
 
-    cpdef tuple search_substring(self, str target_string, int correction_budget=0):
+    cpdef tuple[str, int, int, int] search_substring(self, str target_string, int correction_budget=0):
         """
         Search for fuzzy substring matches of trie entries within a target string.
 
         :param target_string: The string to search within
         :param correction_budget: Maximum number of edits allowed
-        :return: Tuple of (found_string, exact_match, start_pos, end_pos) or (None, False, -1, -1)
+        :return: Tuple of (found_string, corrections, start_pos, end_pos) or (None, -1, -1, -1)
         """
         cdef Str c_target = py_str_to_c_str(target_string)
         cdef str found_str_py = None
         cdef size_t target_len = strlen(c_target)
         cdef SubstringSearchResult best_result
-        cdef bint exact
 
         # Check if the length of the target string makes it impossible to find a match
         if target_len + correction_budget < self.min_length:
             free(c_target)
-            return (None, False, -1, -1)
+            return (None, -1, -1, -1)
 
         with nogil:
             best_result = self._search_substring_internal(c_target, target_len, correction_budget)
 
+        free(c_target)
         # Convert result to Python types
         if best_result.found:
             found_str_py = c_str_to_py_str(best_result.found_str)
-            exact = (best_result.corrections == 0)
-            free(c_target)
-            return (found_str_py, exact, best_result.start_pos, best_result.end_pos)
+            return found_str_py, best_result.corrections, best_result.start_pos, best_result.end_pos
         else:
-            free(c_target)
-            return (None, False, -1, -1)
+            return None, -1, -1, -1
 
     cdef SearchResult _search(self,
                                CacheState* st,

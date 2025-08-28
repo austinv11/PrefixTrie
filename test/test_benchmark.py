@@ -224,7 +224,7 @@ def benchmark_fuzzysearch(entries: list[str], queries: list[str], max_distance: 
         matches = find_near_matches(query, entries, max_l_dist=max_distance)
         if matches:
             # Take the first match (closest one)
-            result = matches[0].text
+            result = matches[0].matched
             exact = (matches[0].dist == 0)
             results.append((result, exact))
         else:
@@ -391,30 +391,6 @@ def run_benchmark_suite(name: str, entries: list[str], queries: list[str], num_r
     print(f"PrefixTrie:  {pt_fuzzy_avg:.4f}s ± {pt_fuzzy_std:.4f}s")
     print(f"RapidFuzz:   {rf_fuzzy_avg:.4f}s ± {rf_fuzzy_std:.4f}s")
     print(f"Speedup:     {rf_fuzzy_avg/pt_fuzzy_avg:.2f}x" if pt_fuzzy_avg > 0 else "N/A")
-
-    # Substring matching benchmarks (using fuzzysearch)
-    if FUZZYSEARCH_AVAILABLE:
-        print("\nSUBSTRING MATCHING:")
-        print("-" * 40)
-
-        fuzzysearch_times = []
-        fs_fuzzy_results = None
-
-        for i in range(num_runs):
-            # FuzzySearch fuzzy
-            results, time_taken = time_function(benchmark_fuzzysearch, entries, queries, 1)
-            fuzzysearch_times.append(time_taken)
-            if fs_fuzzy_results is None:
-                fs_fuzzy_results = results
-
-        # Validate consistency
-        validate_trie_consistency(entries, fs_fuzzy_results, f"{name} - FuzzySearch Fuzzy")
-
-        fs_fuzzy_avg = statistics.mean(fuzzysearch_times)
-        fs_fuzzy_std = statistics.stdev(fuzzysearch_times) if len(fuzzysearch_times) > 1 else 0
-
-        print(f"FuzzySearch:  {fs_fuzzy_avg:.4f}s ± {fs_fuzzy_std:.4f}s")
-        print(f"Speedup:     {fs_fuzzy_avg/pt_fuzzy_avg:.2f}x" if pt_fuzzy_avg > 0 else "N/A")
 
     return {
         'name': name,
