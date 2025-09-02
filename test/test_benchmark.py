@@ -949,3 +949,80 @@ def run_substring_benchmark_suite(name: str, patterns: list[str], targets: list[
         } if FUZZYSEARCH_AVAILABLE else None,
         'speedup': fs_avg / pt_avg if FUZZYSEARCH_AVAILABLE and pt_avg > 0 else 0
     }
+
+
+def benchmark_prefixtrie_longest_prefix(patterns: list[str], targets: list[str], min_match_len: int = 1):
+    """Benchmark PrefixTrie longest_prefix_match performance"""
+    trie = PrefixTrie(patterns)  # No indels for this search
+
+    results = []
+    for target in targets:
+        result, start, length = trie.longest_prefix_match(target, min_match_length=min_match_len)
+        results.append((result, start, length))
+
+    return results
+
+
+def run_longest_prefix_benchmark_suite(name: str, patterns: list[str], targets: list[str], min_match_len: int = 1,
+                                       num_runs: int = 3):
+    """Run a complete longest prefix search benchmark"""
+    print(f"\n{'=' * 60}")
+    print(f"LONGEST PREFIX BENCHMARK: {name}")
+    print(f"Patterns: {len(patterns)}, Targets: {len(targets)}, Min match length: {min_match_len}")
+    print(f"{'=' * 60}")
+
+    pt_times = []
+    pt_results = None
+
+    print(f"\nRunning PrefixTrie longest_prefix_match benchmark ({num_runs} runs)...")
+    for run in range(num_runs):
+        results, time_taken = time_function(benchmark_prefixtrie_longest_prefix, patterns, targets, min_match_len)
+        pt_times.append(time_taken)
+        if pt_results is None:
+            pt_results = results
+
+    def calc_stats(times):
+        if not times: return 0, 0
+        avg = statistics.mean(times)
+        std = statistics.stdev(times) if len(times) > 1 else 0
+        return avg, std
+
+    pt_avg, pt_std = calc_stats(pt_times)
+
+    print(f"\n{'Results':<25} {'Avg Time':<12} {'Std Dev':<12}")
+    print("-" * 50)
+    print(f"{'PrefixTrie Longest Prefix':<25} {pt_avg:.4f}s{'':<4} {pt_std:.4f}s")
+
+    return {
+        'name': name,
+        'patterns_count': len(patterns),
+        'targets_count': len(targets),
+        'min_match_len': min_match_len,
+        'prefixtrie': {'avg': pt_avg, 'std': pt_std}
+    }
+
+
+class TestLongestPrefixBenchmarks:
+    """Benchmark tests for longest_prefix_match functionality"""
+
+    def test_long_target_sparse_patterns(self):
+        """Test longest_prefix_match with long targets and sparse patterns"""
+        # Patterns that start with sparse characters ('b' and 's')
+        patterns = ["begin" + str(i) for i in range(10)] + ["start" + str(i) for i in range(10)]
+        # Long target string with few matches to highlight the skip-ahead optimization
+        target_base = "a" * 2000
+        targets = [target_base + "begin5" + target_base, target_base + "start3" + target_base] * 50
+
+        result = run_longest_prefix_benchmark_suite("Long Target, Sparse Patterns", patterns, targets, min_match_len=5,
+                                                    num_runs=2)
+        assert result['prefixtrie']['avg'] > 0
+
+    def test_many_short_targets(self):
+        """Test longest_prefix_match with many short targets"""
+        patterns = generate_realistic_words(200)
+        # Many short "documents" to search in
+        targets = generate_random_strings(1000, 30)
+
+        result = run_longest_prefix_benchmark_suite("Many Short Targets", patterns, targets, min_match_len=4,
+                                                    num_runs=2)
+        assert result['prefixtrie']['avg'] > 0

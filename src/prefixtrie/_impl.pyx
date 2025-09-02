@@ -17,6 +17,7 @@ import cython
 # -----------------------------
 cdef extern from "simd_compare.h" nogil:
     int simd_strncmp(const char* s1, const char* s2, size_t n)
+    const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles)
 
 ctypedef char* Str
 
@@ -765,6 +766,8 @@ cdef class cPrefixTrie:
         cdef TrieNode* child_node
         cdef size_t remaining_query_len
         cdef size_t min_possible_edits
+        cdef size_t remaining_query_len_after_sub
+        cdef size_t child_len_diff
 
         result.found = False
         result.corrections = curr_corrections
@@ -855,11 +858,24 @@ cdef class cPrefixTrie:
             m = n_children(node)
             best_result.found = False
             best_result.corrections = max_corrections + 1
+            remaining_query_len_after_sub = query_len - (curr_idx + 1)
+
             for i in range(m):
                 idx_child = <int> deref(node.children_idx)[i]
                 if idx_child == want:
                     continue
                 child_node = node.children[idx_child]
+
+                # Pruning check: if this substitution path can't possibly be better than our best result so far, skip it.
+                child_len_diff = 0
+                if remaining_query_len_after_sub < child_node.min_remaining:
+                    child_len_diff = child_node.min_remaining - remaining_query_len_after_sub
+                elif remaining_query_len_after_sub > child_node.max_remaining:
+                    child_len_diff = remaining_query_len_after_sub - child_node.max_remaining
+
+                if (curr_corrections + 1 + <int>child_len_diff) >= best_result.corrections:
+                    continue
+
                 potential = self._search(st, child_node, query, query_len, curr_idx + 1,
                                          curr_corrections + 1, max_corrections, allow_indels, exact_only)
                 cache_store_if_better(st, make_key(child_node.node_id, curr_idx + 1, allow_indels), potential)
@@ -879,20 +895,42 @@ cdef class cPrefixTrie:
             m = n_children(node)
             for i in range(m):
                 idx_child = <int> deref(node.children_idx)[i]
-                potential = self._search(st, node.children[idx_child], query, query_len, curr_idx,
+                child_node = node.children[idx_child]
+
+                # Pruning check for insertion path
+                len_diff = 0
+                remaining_chars = query_len - curr_idx
+                if remaining_chars < child_node.min_remaining:
+                    len_diff = child_node.min_remaining - remaining_chars
+                elif remaining_chars > child_node.max_remaining:
+                    len_diff = remaining_chars - child_node.max_remaining
+
+                if (curr_corrections + 1 + <int>len_diff) > max_corrections:
+                    continue
+
+                potential = self._search(st, child_node, query, query_len, curr_idx,
                                          curr_corrections + 1, max_corrections, True, exact_only)
                 if potential.found:
                     return potential
-                cache_store_if_better(st, make_key(node.children[idx_child].node_id, curr_idx, True), potential)
+                cache_store_if_better(st, make_key(child_node.node_id, curr_idx, True), potential)
 
             # Deletion: advance query index while staying at same trie node
             # This simulates deleting a character from the query
             if curr_idx < query_len:
-                potential = self._search(st, node, query, query_len, curr_idx + 1,
-                                         curr_corrections + 1, max_corrections, True, exact_only)
-                if potential.found:
-                    return potential
-                cache_store_if_better(st, make_key(node.node_id, curr_idx + 1, True), potential)
+                # Pruning check for deletion path
+                len_diff = 0
+                remaining_chars = query_len - (curr_idx + 1)
+                if remaining_chars < node.min_remaining:
+                    len_diff = node.min_remaining - remaining_chars
+                elif remaining_chars > node.max_remaining:
+                    len_diff = remaining_chars - node.max_remaining
+
+                if (curr_corrections + 1 + <int>len_diff) <= max_corrections:
+                    potential = self._search(st, node, query, query_len, curr_idx + 1,
+                                             curr_corrections + 1, max_corrections, True, exact_only)
+                    if potential.found:
+                        return potential
+                    cache_store_if_better(st, make_key(node.node_id, curr_idx + 1, True), potential)
 
         # Store this node's best result and return
         return cache_store_if_better(st, node_key, result)
@@ -1020,13 +1058,13 @@ cdef class cPrefixTrie:
                                                       size_t min_match_len) noexcept nogil:
         cdef SubstringSearchResult best_result
         cdef TrieNode* node
-        cdef size_t start_pos = 0
-        cdef size_t curr_idx = 0
+        cdef size_t start_pos
+        cdef size_t curr_idx
         cdef int ai
         cdef Str matched_str
         cdef size_t match_len
         cdef size_t best_match_len = 0
-        cdef size_t best_start_pos = 0
+        cdef size_t i
 
         # Pre-fill best_result
         best_result.found = False
@@ -1035,12 +1073,35 @@ cdef class cPrefixTrie:
         best_result.start_pos = 0
         best_result.end_pos = 0
 
-        # Try each starting position in the target string
-        while start_pos <= target_len - min_match_len:
+        # Optimization: Collect all possible starting characters from the root's children
+        cdef size_t num_root_children = n_children(self.root)
+        if num_root_children == 0:
+            return best_result # Empty trie
+
+        cdef char* root_children_chars = <char*> malloc(num_root_children * sizeof(char))
+        if not root_children_chars:
+            # A robust implementation might fall back to a simple loop here.
+            # For now, we assume malloc succeeds and return no match if it fails.
+            return best_result
+
+        for i in range(num_root_children):
+            root_children_chars[i] = child_at(self.root, i).value
+
+        cdef const char* p = target
+        cdef const char* end = target + target_len
+
+        while p < end:
+            # Use SIMD to quickly find the next character that is a child of the root
+            p = simd_strchr_any(p, end - p, root_children_chars, num_root_children)
+
+            if p == NULL or (end - p) < min_match_len:
+                break  # No more potential matches
+
+            start_pos = p - target
             node = self.root
             curr_idx = start_pos
 
-            # Walk down the trie as far as possible, checking for complete entries at each step
+            # Walk down the trie as far as possible
             while curr_idx < target_len:
                 ai = self.alphabet.map[<unsigned char> target[curr_idx]]
                 if ai < 0 or node.children[ai] == NULL:
@@ -1070,10 +1131,11 @@ cdef class cPrefixTrie:
 
                         best_result.found = True
                         best_result.found_str = matched_str
-                        best_result.corrections = 0
                         best_result.start_pos = start_pos
                         best_result.end_pos = start_pos + match_len
-            start_pos += 1
+            p += 1  # Continue searching from the next character
+
+        free(root_children_chars)
         return best_result
 
     cdef void _search_count_recursive(self,

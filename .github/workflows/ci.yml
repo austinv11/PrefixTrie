@@ -77,3 +77,33 @@ jobs:
           pip install -e .[dev]
       - name: Run tests
         run: pytest
+
+  test-arm:
+    name: Test on ARM64 (QEMU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Install and Test on ARM64
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          env:
+            # Set compiler flags for the ARM build.
+            # -std=c++11 is required by the project.
+            # -O3 is for optimization. NEON is enabled by default on aarch64.
+            CXXFLAGS: -O3 -std=c++11
+          run: |
+            echo "Running on $(uname -m)"
+            python -m pip install --upgrade pip
+            # Install project with dev dependencies
+            pip install -e .[dev]
+            # Run the test suite
+            pytest
