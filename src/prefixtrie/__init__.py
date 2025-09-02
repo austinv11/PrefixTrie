@@ -35,6 +35,7 @@ class PrefixTrie:
     def __init__(self, entries: list[str], allow_indels: bool=False, immutable: bool=True, shared_memory_name: str=None):
         """
         Initialize the PrefixTrie with the given arguments.
+
         :param entries: List of strings to be added to the trie.
         :param allow_indels: If True, allows insertions and deletions in the trie
         :param immutable: If True, the trie cannot be modified after creation
@@ -131,7 +132,9 @@ class PrefixTrie:
             raise RuntimeError(f"Failed to load from shared memory '{name}': {e}")
 
     def cleanup_shared_memory(self):
-        """Clean up shared memory if this instance owns it"""
+        """
+        Clean up shared memory if this instance owns it
+        """
         if hasattr(self, '_shared_memory') and self._shared_memory and hasattr(self, '_is_shared_owner') and self._is_shared_owner:
             try:
                 self._shared_memory.unlink()
@@ -168,7 +171,9 @@ class PrefixTrie:
         self._exact_set = set(self._entries)
 
     def __del__(self):
-        """Clean up shared memory on deletion if we own it"""
+        """
+        Clean up shared memory on deletion if we own it
+        """
         try:
             self.cleanup_shared_memory()
         except AttributeError:
@@ -178,9 +183,23 @@ class PrefixTrie:
     def search(self, item: str, correction_budget: int=0) -> tuple[str | None, int]:
         """
         Search for an item in the trie with optional corrections.
+
         :param item: The string to search for in the trie.
         :param correction_budget: Maximum number of corrections allowed (default is 0).
         :return: A tuple containing the found item and the number of corrections, or (None, -1) if not found.
+
+        Example:
+            > trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
+            > result = trie.search("ACGT", correction_budget=0)
+            > # Returns: ("ACGT", 0) - exact match
+            > result = trie.search("ACG", correction_budget=1)
+            > # Returns: ("ACGT", 1) - found with 1 insertion
+            > result = trie.search("ACGTT", correction_budget=1)
+            > # Returns: ("ACGT", 1) - found with 1 deletion
+            > result = trie.search("ACGTC", correction_budget=1)
+            > # Returns: ("ACGT", 1) - found with 1 substitution
+            > result = trie.search("ACG", correction_budget=0)
+            > # Returns: (None, -1) - no exact match
         """
         # Ultra-fast exact matching using Python set (bypasses all Cython overhead)
         if correction_budget == 0:
@@ -208,12 +227,12 @@ class PrefixTrie:
                  where start_pos and end_pos indicate the location of the match in target_string
 
         Example:
-            >>> trie = PrefixTrie(["HELLO", "WORLD"], allow_indels=True)
-            >>> result = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
-            >>> # Returns: ("HELLO", 0, 4, 9)
+            > trie = PrefixTrie(["HELLO", "WORLD"], allow_indels=True)
+            > result = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
+            > # Returns: ("HELLO", 0, 4, 9)
 
-            >>> result = trie.search_substring("AAAHELOAAAA", correction_budget=1)
-            >>> # Returns: ("HELLO", 1, 3, 8) - found with 1 substitution
+            > result = trie.search_substring("AAAHELOAAAA", correction_budget=1)
+            > # Returns: ("HELLO", 1, 3, 8) - found with 1 substitution
         """
         return self._trie.search_substring(target_string, correction_budget)
 
@@ -225,12 +244,13 @@ class PrefixTrie:
         :param min_match_length: Minimum length of the match to be considered valid.
         :return: A tuple containing the longest matching prefix, the target start index, and the match length.
                  If no valid match is found, returns (None, -1, -1).
+
         Example:
-            >>> trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=False)
-            >>> result = trie.longest_prefix_match("ACGTAGGT", min_match_length=4)
-            >>> # Returns: ("ACGTAG", 0, 6)
-            >>> result = trie.longest_prefix_match("ACGTTT", min_match_length=5)
-            >>> # Returns: (None, -1, -1) - no match of at least length 5
+            > trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=False)
+            > result = trie.longest_prefix_match("ACGTAGGT", min_match_length=4)
+            > # Returns: ("ACGTAG", 0, 6)
+            > result = trie.longest_prefix_match("ACGTTT", min_match_length=5)
+            > # Returns: (None, -1, -1) - no match of at least length 5
         """
         return self._trie.longest_prefix_match(target, min_match_length)
 
@@ -246,9 +266,9 @@ class PrefixTrie:
         :return: The total number of unique entries matching the query within the budget
 
         Example:
-            >>> trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
-            >>> count = trie.search_count("ACGT", correction_budget=1)
-            >>> # Returns: 3 (matches "ACGT", "ACGTA", "ACGTAG" with 0 or 1 edit)
+            > trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
+            > count = trie.search_count("ACGT", correction_budget=1)
+            > # Returns: 3 (matches "ACGT", "ACGTA", "ACGTAG" with 0 or 1 edit)
         """
         return self._trie.search_count(query, correction_budget)
 
@@ -256,6 +276,7 @@ class PrefixTrie:
     def __contains__(self, item: str) -> bool:
         """
         Check if the trie contains the given item.
+
         :param item: The string to check for presence in the trie.
         :return: True if the item is in the trie, False otherwise.
         """
@@ -269,6 +290,7 @@ class PrefixTrie:
     def __iter__(self):
         """
         Iterate over the items in the trie.
+
         :return: An iterator over the items in the trie.
         """
         return self._trie.__iter__()
@@ -276,6 +298,7 @@ class PrefixTrie:
     def __len__(self):
         """
         Get the number of items in the trie.
+
         :return: The number of items in the trie.
         """
         return self._trie.n_values()
@@ -283,6 +306,7 @@ class PrefixTrie:
     def __repr__(self):
         """
         String representation of the PrefixTrie.
+
         :return: A string representation of the PrefixTrie.
         """
         return f"PrefixTrie(n_entries={len(self)}, allow_indels={self.allow_indels})"
@@ -290,6 +314,7 @@ class PrefixTrie:
     def __str__(self):
         """
         String representation of the PrefixTrie.
+
         :return: A string representation of the PrefixTrie.
         """
         return f"PrefixTrie with {len(self)} entries, allow_indels={self.allow_indels}"
@@ -297,6 +322,7 @@ class PrefixTrie:
     def __getitem__(self, item: str) -> str:
         """
         Get the item from the trie.
+
         :param item: The string to retrieve from the trie.
         :return: The item if found, otherwise raises KeyError.
         """
@@ -308,6 +334,7 @@ class PrefixTrie:
     def add(self, entry: str) -> bool:
         """
         Add a new entry to the trie (only if mutable).
+
         :param entry: The string to add
         :return: True if added successfully, False if already exists or trie is immutable
         """
@@ -329,6 +356,7 @@ class PrefixTrie:
     def remove(self, entry: str) -> bool:
         """
         Remove an entry from the trie (only if mutable).
+
         :param entry: The string to remove
         :return: True if removed successfully, False if not found or trie is immutable
         """
@@ -350,6 +378,7 @@ class PrefixTrie:
     def is_immutable(self) -> bool:
         """
         Check if the trie is immutable.
+
         :return: True if immutable, False if mutable
         """
         return self._trie.is_immutable()
