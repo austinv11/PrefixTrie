@@ -81,3 +81,6 @@ addopts = ["-ra", "--strict-config", "--strict-markers", "--maxfail=1"]
 version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
 write_to = "src/prefixtrie/_version.py"
+
+[tool.setuptools.package-data]
+prefixtrie = ["*.pyx", "*.pxd"]

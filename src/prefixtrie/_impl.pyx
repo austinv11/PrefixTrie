@@ -77,7 +77,7 @@ cdef inline size_t n_children(const TrieNode* n) noexcept nogil:
     return deref(n.children_idx).size()
 
 cdef inline TrieNode* child_at(const TrieNode* n, const size_t i) noexcept nogil:
-    cdef int idx = deref(n.children_idx)[i]
+    cdef int idx = <int>deref(n.children_idx)[i]
     return n.children[idx]
 
 cdef inline void append_child_at_index(TrieNode* p, TrieNode* c, int idx) noexcept nogil:
@@ -143,7 +143,7 @@ cdef inline CacheState* cache_new() nogil:
 
 cdef inline void cache_reserve(CacheState* st, size_t query_len) noexcept nogil:
     # Speed up allocations by pre-reserving a rough guesstimate on initial size
-    deref(st.data).reserve(8 * query_len)
+    deref(st.data).reserve(<size_t>(8 * query_len))
 
 cdef inline void cache_free(CacheState* st) noexcept nogil:
     if st != NULL:
@@ -195,7 +195,8 @@ cdef inline SearchResult cache_store_if_better(CacheState* st, Key key, SearchRe
 cdef void _traverse(TrieNode* n, list entries):
     if n is NULL:
         return
-    cdef int cn = n_children(n)
+    cdef size_t cn = n_children(n)
+    cdef size_t i
     if has_complete(n):
         entries.append(c_str_to_py_str(n.leaf_value))
     if cn > 0:
@@ -220,7 +221,7 @@ cdef class TrieIterator:
     def __next__(self):
         cdef TrieNode* current
         cdef size_t i
-        cdef int m
+        cdef size_t m
         while not self.stack.empty():
             current = self.stack.back()
             self.stack.pop_back()
@@ -309,16 +310,16 @@ cdef class cPrefixTrie:
         Get the minimum length of entries in the trie.
         :return: The minimum length of entries in the trie.
         """
-        return self.min_length
+        return <int>self.min_length
 
     cpdef int get_max_length(self):
         """
         Get the maximum length of entries in the trie.
         :return: The maximum length of entries in the trie.
         """
-        return self.max_length
+        return <int>self.max_length
 
-    cpdef bint add(self, str entry) noexcept:
+    cpdef bint add(self, str entry):
         """
         Add a new entry to the trie (only if mutable).
         :param entry: The string to add
@@ -339,7 +340,7 @@ cdef class cPrefixTrie:
 
         return True
 
-    cpdef bint remove(self, str entry) noexcept:
+    cpdef bint remove(self, str entry):
         """
         Remove an entry from the trie (only if mutable).
         :param entry: The string to remove
@@ -668,10 +669,10 @@ cdef class cPrefixTrie:
             if allow_indels and curr_corrections < max_corrections:
                 # We can match here but need to add corrections for remaining query characters
                 remaining_chars = query_len - curr_idx
-                if curr_corrections + remaining_chars <= max_corrections:
+                if curr_corrections + <int>remaining_chars <= max_corrections:
                     potential.found = True
                     potential.found_str = node.leaf_value
-                    potential.corrections = curr_corrections + remaining_chars
+                    potential.corrections = curr_corrections + <int>remaining_chars
                     result = cache_store_if_better(st, node_key, potential)
 
         if is_at_query_end and (not allow_indels or curr_corrections >= max_corrections):
@@ -688,7 +689,7 @@ cdef class cPrefixTrie:
             len_diff = remaining_chars - node.max_remaining
         else:
             len_diff = 0
-        if curr_corrections + len_diff > max_corrections:
+        if curr_corrections + <int>len_diff > max_corrections:
             return cache_store_if_better(st, node_key, result)
 
         # Collapsed exact skip
@@ -734,7 +735,7 @@ cdef class cPrefixTrie:
             best_result.found = False
             best_result.corrections = max_corrections + 1
             for i in range(m):
-                idx_child = deref(node.children_idx)[i]
+                idx_child = <int>deref(node.children_idx)[i]
                 if idx_child == want:
                     continue
                 child_node = node.children[idx_child]
@@ -757,7 +758,7 @@ cdef class cPrefixTrie:
             # This simulates inserting a character from the trie into the query
             m = n_children(node)
             for i in range(m):
-                idx_child = deref(node.children_idx)[i]
+                idx_child = <int>deref(node.children_idx)[i]
                 potential = self._search(st, node.children[idx_child], query, query_len, curr_idx,
                                          curr_corrections + 1, max_corrections, True, exact_only)
                 if potential.found:
@@ -869,7 +870,7 @@ cdef class cPrefixTrie:
         # Mismatch
         m = n_children(node)
         for i in range(m):
-            idx_child = deref(node.children_idx)[i]
+            idx_child = <int>deref(node.children_idx)[i]
             if idx_child == ai:
                 continue
             child_node = node.children[idx_child]
