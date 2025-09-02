@@ -6,19 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            cflags: "-O3"
-          - os: macos-latest
-            cflags: "-O3"
-          - os: windows-latest
-            cflags: "/O2"
+  build_wheels_linux_sse2:
+    name: Build wheels on Linux (SSE2)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,22 +22,93 @@ jobs:
           pip install cibuildwheel
       - name: Build wheels
         env:
-          CIBW_SKIP: cp38-* cp39-*
-          CIBW_ENVIRONMENT: "CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}'"
-#          CIBW_TEST_COMMAND: "pytest {project}/test"
-#          CIBW_TEST_REQUIRES: "pytest cython"
+          CIBW_SKIP: "cp38-* cp39-*"
+          CIBW_ENVIRONMENT: 'CXXFLAGS="-O3 -msse2"'
         run: cibuildwheel --output-dir dist
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-linux-sse2
           path: dist/*.whl
 
-  build-sdist:
+  build_wheels_linux_avx2:
+    name: Build wheels on Linux (AVX2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for setuptools-scm
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install cibuildwheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel
+      - name: Build wheels
+        env:
+          CIBW_SKIP: "cp38-* cp39-*"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_ENVIRONMENT: 'CXXFLAGS="-O3 -mavx2"'
+        run: cibuildwheel --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-avx2
+          path: dist/*.whl
+
+  build_wheels_macos:
+    name: Build wheels on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install cibuildwheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel
+      - name: Build wheels
+        env:
+          CIBW_SKIP: "cp38-* cp39-*"
+          CIBW_ENVIRONMENT: 'CXXFLAGS="-O3 -msse2"'
+        run: cibuildwheel --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos
+          path: dist/*.whl
+
+  build_wheels_windows:
+    name: Build wheels on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install cibuildwheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel
+      - name: Build wheels
+        env:
+          CIBW_SKIP: "cp38-* cp39-*"
+          CIBW_ENVIRONMENT: 'CXXFLAGS="/O2"'
+        run: cibuildwheel --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows
+          path: dist/*.whl
+
+  build_sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -61,13 +122,13 @@ jobs:
           path: dist/*.tar.gz
 
   publish:
-    needs: [build-wheels, build-sdist]
+    needs: [build_wheels_linux_sse2, build_wheels_linux_avx2, build_wheels_macos, build_wheels_windows, build_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/prefixtrie
     permissions:
-      id-token: write  # For trusted publishing
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

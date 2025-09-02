@@ -3,8 +3,9 @@
 
 from libc.stdlib cimport malloc, free
 # from libc.stddef cimport size_t
-from libc.string cimport strcpy, strlen, memcpy, strncmp, memset
+from libc.string cimport strcpy, strlen, memcpy, memset
 from libcpp.unordered_map cimport unordered_map
+from libcpp.unordered_set cimport unordered_set
 from libcpp.utility cimport pair
 from libcpp.vector cimport vector
 from cython.operator cimport dereference as deref, preincrement as preinc
@@ -14,6 +15,9 @@ import cython
 # -----------------------------
 # Low-level string helpers
 # -----------------------------
+cdef extern from "simd_compare.h" nogil:
+    int simd_strncmp(const char* s1, const char* s2, size_t n)
+
 ctypedef char* Str
 
 cdef Str py_str_to_c_str(str py_str):
@@ -219,6 +223,37 @@ cdef inline SearchResult cache_store_if_better(CacheState * st, Key key, SearchR
             return incoming
         else:
             return deref(it).second
+
+# Cache specifically meant for counting
+
+# New cache for counting
+cdef inline Key make_count_key(const int node_id, const size_t curr_idx, const int corrections) noexcept nogil:
+    # Key composition: 31 bits for node_id, 28 bits for curr_idx, 5 bits for corrections
+    return ((<unsigned long long> node_id) << 33) | ((<unsigned long long> curr_idx) << 5) | (<unsigned long long> corrections)
+
+cdef struct CountCacheState:
+    unordered_map[Key, bint]* data
+
+cdef inline CountCacheState* count_cache_new() nogil:
+    cdef CountCacheState* st = <CountCacheState*> malloc(sizeof(CountCacheState))
+    if st == NULL:
+        with gil:
+            raise MemoryError("Failed to allocate CountCacheState")
+    st.data = new unordered_map[Key, bint]()
+    return st
+
+cdef inline void count_cache_free(CountCacheState* st) noexcept nogil:
+    if st != NULL:
+        if st.data != NULL:
+            del st.data
+        free(st)
+
+cdef inline bint count_cache_is_visited(const CountCacheState* st, Key key) noexcept nogil:
+    return deref(st.data).count(key) > 0
+
+cdef inline void count_cache_mark_visited(CountCacheState* st, Key key) noexcept nogil:
+    deref(st.data)[key] = True
+
 
 cdef void _traverse(TrieNode* n, list entries):
     if n is NULL:
@@ -671,6 +706,34 @@ cdef class cPrefixTrie:
         else:
             return None, -1, -1
 
+    cpdef int search_count(self, str query, int correction_budget=0):
+        """
+        Count the number of entries that match a query within a given correction budget.
+
+        :param query: The query string to search for.
+        :param correction_budget: The maximum number of corrections allowed.
+        :return: The number of matching entries found.
+        """
+        cdef Str c_query = py_str_to_c_str(query)
+        cdef size_t query_len = strlen(c_query)
+        cdef unordered_set[Str] found_entries
+        cdef CountCacheState* st = count_cache_new()
+
+        # Check if any match is possible
+        if <int>self.min_length > <int>query_len + correction_budget and <int>self.max_length < <int>query_len - correction_budget:
+            free(c_query)
+            count_cache_free(st)
+            return 0
+
+        with nogil:
+            self._search_count_recursive(
+                st, self.root, c_query, query_len, 0, 0, correction_budget, self.allow_indels, &found_entries
+            )
+
+        count_cache_free(st)
+        free(c_query)
+        return found_entries.size()
+
     cdef SearchResult _search(self,
                               CacheState * st,
                               TrieNode* node,
@@ -756,7 +819,7 @@ cdef class cPrefixTrie:
                 skip_str = node.collapsed + 1
             if skip_len > 0:
                 # For exact skip, the collapsed path must match AND we must be able to consume it exactly
-                if curr_idx + skip_len <= query_len and strncmp(skip_str, query + curr_idx, skip_len) == 0:
+                if curr_idx + skip_len <= query_len and simd_strncmp(skip_str, query + curr_idx, skip_len) == 0:
                     # Only do exact skip if we're at the end of query or if we're allowing corrections
                     if curr_idx + skip_len == query_len or allow_indels:
                         potential = self._search(st, node.skip_to, query, query_len, curr_idx + skip_len,
@@ -1010,10 +1073,98 @@ cdef class cPrefixTrie:
                         best_result.corrections = 0
                         best_result.start_pos = start_pos
                         best_result.end_pos = start_pos + match_len
-
             start_pos += 1
-
         return best_result
+
+    cdef void _search_count_recursive(self,
+                                      CountCacheState * st,
+                                      TrieNode * node,
+                                      Str query,
+                                      size_t query_len,
+                                      size_t curr_idx,
+                                      int curr_corrections,
+                                      int max_corrections,
+                                      bint allow_indels,
+                                      unordered_set[Str]* found_entries) noexcept nogil:
+        cdef Key node_key
+        cdef size_t i, m, len_diff
+        cdef int ai, idx_child
+        cdef TrieNode * child_node
+        cdef char query_char
+        cdef size_t remaining_query_len
+
+        if curr_corrections > max_corrections:
+            return
+
+        node_key = make_count_key(node.node_id, curr_idx, curr_corrections)
+        if count_cache_is_visited(st, node_key):
+            return
+        count_cache_mark_visited(st, node_key)
+
+        # Base case: if the query is fully consumed
+        if curr_idx == query_len:
+            # If current node is a match, add it
+            if has_complete(node):
+                found_entries.insert(node.leaf_value)
+
+            # We can still match longer words by incurring insertion costs
+            if allow_indels:
+                m = n_children(node)
+                for i in range(m):
+                    child_node = child_at(node, i)
+                    self._search_count_recursive(st, child_node, query, query_len, curr_idx, curr_corrections + 1,
+                                                 max_corrections, allow_indels, found_entries)
+            return
+
+        # Pruning based on length difference
+        remaining_query_len = query_len - curr_idx
+        if remaining_query_len < node.min_remaining:
+            len_diff = node.min_remaining - remaining_query_len
+        elif remaining_query_len > node.max_remaining:
+            len_diff = remaining_query_len - node.max_remaining
+        else:
+            len_diff = 0
+        if curr_corrections + <int>len_diff > max_corrections:
+            return
+
+        # Handle match at the current node (deletion of remaining query chars)
+        if has_complete(node):
+            if allow_indels:
+                if curr_corrections + <int>remaining_query_len <= max_corrections:
+                    found_entries.insert(node.leaf_value)
+
+        # --- Recursive Steps ---
+        # 1. Exact Match
+        query_char = query[curr_idx]
+        ai = self.alphabet.map[<unsigned char> query_char]
+        if ai >= 0 and node.children[ai] is not NULL:
+            self._search_count_recursive(st, node.children[ai], query, query_len, curr_idx + 1, curr_corrections,
+                                         max_corrections, allow_indels, found_entries)
+
+        # Budget check for further corrections
+        if curr_corrections >= max_corrections:
+            return
+
+        # 2. Substitution
+        m = n_children(node)
+        for i in range(m):
+            idx_child = <int> deref(node.children_idx)[i]
+            if idx_child == ai:
+                continue
+            child_node = node.children[idx_child]
+            self._search_count_recursive(st, child_node, query, query_len, curr_idx + 1, curr_corrections + 1,
+                                         max_corrections, allow_indels, found_entries)
+
+        if allow_indels:
+            # 3. Deletion (from query)
+            self._search_count_recursive(st, node, query, query_len, curr_idx + 1, curr_corrections + 1,
+                                         max_corrections, allow_indels, found_entries)
+
+            # 4. Insertion (into query)
+            for i in range(m):
+                child_node = child_at(node, i)
+                self._search_count_recursive(st, child_node, query, query_len, curr_idx, curr_corrections + 1,
+                                             max_corrections, allow_indels, found_entries)
 
     def __dealloc__(self):
         self._free_node(self.root)

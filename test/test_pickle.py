@@ -9,7 +9,9 @@ import copy
 import gc
 import weakref
 import pyximport
-pyximport.install()
+pyximport.install(
+    setup_args={"include_dirs": ["../src/prefixtrie"]},
+)
 from prefixtrie import PrefixTrie, create_shared_trie, load_shared_trie
 
 

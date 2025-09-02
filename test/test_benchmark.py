@@ -4,7 +4,9 @@ import random
 import string
 import pytest
 import pyximport
-pyximport.install()
+pyximport.install(
+    setup_args={"include_dirs": ["../src/prefixtrie"]},
+)
 from prefixtrie import PrefixTrie
 
 try:

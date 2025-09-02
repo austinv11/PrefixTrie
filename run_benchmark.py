@@ -15,7 +15,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
     import pyximport
-    pyximport.install()
+
+    pyximport.install(
+        setup_args={"include_dirs": ["../src/prefixtrie"]},
+    )
     from prefixtrie import PrefixTrie
     print("✓ PrefixTrie imported successfully")
 except ImportError as e:

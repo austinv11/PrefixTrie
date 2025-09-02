@@ -234,6 +234,25 @@ class PrefixTrie:
         """
         return self._trie.longest_prefix_match(target, min_match_length)
 
+    def search_count(self, query: str, correction_budget: int = 0) -> int:
+        """
+        Count the number of entries that fit a query string within a correction budget.
+
+        This method is optimized for efficiently counting all possible matches
+        without returning the actual strings.
+
+        :param query: The string to search for
+        :param correction_budget: Maximum number of edits allowed (default is 0)
+        :return: The total number of unique entries matching the query within the budget
+
+        Example:
+            >>> trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
+            >>> count = trie.search_count("ACGT", correction_budget=1)
+            >>> # Returns: 3 (matches "ACGT", "ACGTA", "ACGTAG" with 0 or 1 edit)
+        """
+        return self._trie.search_count(query, correction_budget)
+
+
     def __contains__(self, item: str) -> bool:
         """
         Check if the trie contains the given item.

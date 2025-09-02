@@ -1,7 +1,9 @@
 import pytest
 import pyximport
 
-pyximport.install()
+pyximport.install(
+    setup_args={"include_dirs": ["../src/prefixtrie"]},
+)
 from prefixtrie import PrefixTrie
 
 
@@ -2079,4 +2081,64 @@ class TestPrefixTrieSharedMemoryMutability:
                 loaded_trie.remove("hello")
         finally:
             original_trie.cleanup_shared_memory()
+
+
+class TestPrefixTrieSearchCount:
+    """Test the search_count method"""
+
+    def test_search_count_exact(self):
+        """Test search_count with exact matches"""
+        entries = ["hello", "world", "test", "hello"]  # Note duplicate
+        trie = PrefixTrie(entries)
+        assert trie.search_count("hello", correction_budget=0) == 1
+        assert trie.search_count("world", correction_budget=0) == 1
+        assert trie.search_count("test", correction_budget=0) == 1
+        assert trie.search_count("goodbye", correction_budget=0) == 0
+
+    def test_search_count_fuzzy_no_indels(self):
+        """Test search_count with fuzzy matching but no indels"""
+        entries = ["cat", "bat", "hat", "rat"]
+        trie = PrefixTrie(entries, allow_indels=False)
+        # "dat" is 1 substitution away from "cat", "bat", "hat", "rat"
+        assert trie.search_count("dat", correction_budget=1) == 4
+        # "dat" is 2 substitutions away from nothing in this list
+        assert trie.search_count("dot", correction_budget=1) == 0
+
+        entries_2 = ["sitting", "fitting", "hitting"]
+        trie_2 = PrefixTrie(entries_2, allow_indels=False)
+        # "hitting" is 1 sub away from "sitting" and "fitting"
+        assert trie_2.search_count("hitting", correction_budget=1) == 3
+
+    def test_search_count_fuzzy_with_indels(self):
+        """Test search_count with fuzzy matching and indels"""
+        entries = ["cat", "ca", "c", "bat"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # "ca" can match "cat" (1 del), "ca" (0), "c" (1 ins)
+        assert trie.search_count("ca", correction_budget=1) == 3
+        # "c" can match "cat" (2 del), "ca" (1 del), "c" (0)
+        assert trie.search_count("c", correction_budget=1) == 2
+        assert trie.search_count("c", correction_budget=2) == 3
+
+    def test_search_count_no_matches(self):
+        """Test search_count when no matches are expected"""
+        entries = ["apple", "banana", "cherry"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        assert trie.search_count("xyz", correction_budget=0) == 0
+        assert trie.search_count("xyz", correction_budget=1) == 0
+        # "apple" -> "xyz" is 5 corrections
+        assert trie.search_count("xyz", correction_budget=4) == 0
+        assert trie.search_count("xyz", correction_budget=5) == 1  # matches "apple"
+
+    def test_search_count_complex(self):
+        """Test search_count with a more complex scenario"""
+        entries = ["test", "tests", "testing", "tester", "toast"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # "test" can match:
+        # "test" (0)
+        # "tests" (1 ins)
+        # "tester" (2 ins)
+        # "toast" (2 subs)
+        assert trie.search_count("test", correction_budget=0) == 1
+        assert trie.search_count("test", correction_budget=1) == 2  # test, tests
+        assert trie.search_count("test", correction_budget=2) == 4  # test, tests, tester, toast
 

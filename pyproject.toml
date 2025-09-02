@@ -56,7 +56,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-std=c++11"], extra-link-args = []}]
+ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-std=c++11"], extra-link-args = [], include-dirs = ["src/prefixtrie/"]}]
 include-package-data = true
 zip-safe = false
 

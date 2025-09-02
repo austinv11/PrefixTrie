@@ -15,7 +15,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # MUST import pyximport for Cython modules to work properly
 import pyximport
-pyximport.install()
+pyximport.install(
+    setup_args={"include_dirs": ["../src/prefixtrie"]},
+)
 
 try:
     from prefixtrie import PrefixTrie
