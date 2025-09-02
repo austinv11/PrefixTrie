@@ -92,6 +92,25 @@ result, start_pos, match_length = trie.longest_prefix_match("ACGTTT", min_match_
 print(result)  # None
 ```
 
+### Counting Fuzzy Matches
+
+Efficiently count the number of unique entries that match a query within a given correction budget, without retrieving the actual strings.
+
+```python
+trie = PrefixTrie(["apple", "apply", "apples", "orange"], allow_indels=True)
+
+# Count exact matches
+count = trie.search_count("apple", correction_budget=0)
+print(f"Found {count} exact match(es) for 'apple'")
+# Found 1 exact match(es) for 'apple'
+
+# Count fuzzy matches
+# "apple" (0 corrections) + "apply" (1 correction) + "apples" (1 correction)
+count = trie.search_count("apple", correction_budget=1)
+print(f"Found {count} fuzzy match(es) for 'apple' with budget 1")
+# Found 3 fuzzy match(es) for 'apple' with budget 1
+```
+
 ## Mutable vs Immutable Tries
 
 ### Immutable Tries (Default)
@@ -228,7 +247,7 @@ print(repr(trie))  # PrefixTrie(n_entries=3, allow_indels=False)
 pip install prefixtrie
 ```
 
-### From Source
+### Building from Source
 
 Requires a C++ compiler and Cython:
 
@@ -243,6 +262,19 @@ uv pip install -e .
 # With pip
 pip install -e .
 ```
+
+#### Building the Documentation
+The documentation is built using [MkDocs](https://www.mkdocs.org/).
+
+```bash
+# Install documentation dependencies
+uv sync --group dev
+
+# Build the site
+mkdocs build
+```
+
+The generated documentation will be in the `site` directory.
 
 ## Development and Testing
 
