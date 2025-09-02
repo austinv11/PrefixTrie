@@ -901,6 +901,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/de/b4/3c5eac68f31e124a55d255d318c7445840fa1be55e013f507556d6481913/mkdocstrings-0.30.0-py3-none-any.whl", hash = "sha256:ae9e4a0d8c1789697ac776f2e034e2ddd71054ae1cf2c2bb1433ccfd07c226f2", size = 36579, upload-time = "2025-07-22T23:48:44.152Z" },
 ]
 
+[package.optional-dependencies]
+python = [
+    { name = "mkdocstrings-python" },
+]
+
 [[package]]
 name = "mkdocstrings-python"
 version = "1.18.2"
@@ -1216,14 +1221,14 @@ wheels = [
 name = "prefixtrie"
 source = { editable = "." }
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 dev = [
     { name = "cython" },
     { name = "fuzzysearch" },
     { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
-    { name = "mkdocstrings" },
+    { name = "mkdocstrings", extra = ["python"] },
     { name = "mkdocstrings-python" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1236,24 +1241,23 @@ dev = [
 ]
 
 [package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "cython", specifier = ">=3.0" },
-    { name = "fuzzysearch", specifier = ">=0.8.0" },
-    { name = "matplotlib", specifier = ">=3.10.6" },
-    { name = "mkdocs", specifier = ">=1.6.1" },
-    { name = "mkdocs-material", specifier = ">=9.6.18" },
-    { name = "mkdocstrings", specifier = ">=0.25" },
-    { name = "mkdocstrings-python", specifier = ">=1.0" },
-    { name = "numpy", specifier = ">=2.2.6" },
-    { name = "pytest", specifier = ">=8.4.1" },
-    { name = "rapidfuzz", specifier = ">=3.0" },
-    { name = "regex", specifier = ">=2025.9.1" },
-    { name = "setuptools", specifier = ">=80" },
-    { name = "symspellpy", specifier = ">=6.9.0" },
-    { name = "thefuzz", extras = ["speedup"], specifier = ">=0.22.1" },
+requires-dist = [
+    { name = "cython", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "fuzzysearch", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.10.6" },
+    { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.6.1" },
+    { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.6.18" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=0.25" },
+    { name = "mkdocstrings-python", marker = "extra == 'dev'", specifier = ">=1.0" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=2.2.6" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
+    { name = "rapidfuzz", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "regex", marker = "extra == 'dev'", specifier = ">=2025.9.1" },
+    { name = "setuptools", marker = "extra == 'dev'", specifier = ">=80" },
+    { name = "symspellpy", marker = "extra == 'dev'", specifier = ">=6.9.0" },
+    { name = "thefuzz", extras = ["speedup"], marker = "extra == 'dev'", specifier = ">=0.22.1" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "pygments"

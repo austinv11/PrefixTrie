@@ -76,7 +76,7 @@ dev = [
     "mkdocs-material>=9.6.18",
     "mkdocs>=1.6.1",
     "pytest>=8.4.1",
-    "mkdocstrings>=0.25",
+    "mkdocstrings[python]>=0.25",
     "mkdocstrings-python>=1.0",
 ]
 

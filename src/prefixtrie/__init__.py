@@ -187,19 +187,6 @@ class PrefixTrie:
         :param item: The string to search for in the trie.
         :param correction_budget: Maximum number of corrections allowed (default is 0).
         :return: A tuple containing the found item and the number of corrections, or (None, -1) if not found.
-
-        Example:
-            trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
-            result = trie.search("ACGT", correction_budget=0)
-            # Returns: ("ACGT", 0) - exact match
-            result = trie.search("ACG", correction_budget=1)
-            # Returns: ("ACGT", 1) - found with 1 insertion
-            result = trie.search("ACGTT", correction_budget=1)
-            # Returns: ("ACGT", 1) - found with 1 deletion
-            result = trie.search("ACGTC", correction_budget=1)
-            # Returns: ("ACGT", 1) - found with 1 substitution
-            result = trie.search("ACG", correction_budget=0)
-            # Returns: (None, -1) - no exact match
         """
         # Ultra-fast exact matching using Python set (bypasses all Cython overhead)
         if correction_budget == 0:
@@ -225,14 +212,6 @@ class PrefixTrie:
         :param correction_budget: Maximum number of edits allowed (default is 0)
         :return: Tuple of (found_string, corrections, start_pos, end_pos) or (None, -1, -1, -1)
                  where start_pos and end_pos indicate the location of the match in target_string
-
-        Example:
-            trie = PrefixTrie(["HELLO", "WORLD"], allow_indels=True)
-            result = trie.search_substring("AAAAHELLOAAAA", correction_budget=0)
-            # Returns: ("HELLO", 0, 4, 9)
-
-            result = trie.search_substring("AAAHELOAAAA", correction_budget=1)
-            # Returns: ("HELLO", 1, 3, 8) - found with 1 substitution
         """
         return self._trie.search_substring(target_string, correction_budget)
 
@@ -243,14 +222,6 @@ class PrefixTrie:
         :param target: The target string to find the longest prefix match for.
         :param min_match_length: Minimum length of the match to be considered valid.
         :return: A tuple containing the longest matching prefix, the target start index, and the match length.
-                 If no valid match is found, returns (None, -1, -1).
-
-        Example:
-            trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=False)
-            result = trie.longest_prefix_match("ACGTAGGT", min_match_length=4)
-            # Returns: ("ACGTAG", 0, 6)
-            result = trie.longest_prefix_match("ACGTTT", min_match_length=5)
-            # Returns: (None, -1, -1) - no match of at least length 5
         """
         return self._trie.longest_prefix_match(target, min_match_length)
 
@@ -261,17 +232,11 @@ class PrefixTrie:
         This method is optimized for efficiently counting all possible matches
         without returning the actual strings.
 
-        :param query: The string to search for
-        :param correction_budget: Maximum number of edits allowed (default is 0)
-        :return: The total number of unique entries matching the query within the budget
-
-        Example:
-            trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=True)
-            count = trie.search_count("ACGT", correction_budget=1)
-            # Returns: 3 (matches "ACGT", "ACGTA", "ACGTAG" with 0 or 1 edit)
+        :param query: The query string to match against the trie entries.
+        :param correction_budget: Maximum number of corrections allowed (default is 0).
+        :return: The count of matching entries within the correction budget.
         """
         return self._trie.search_count(query, correction_budget)
-
 
     def __contains__(self, item: str) -> bool:
         """

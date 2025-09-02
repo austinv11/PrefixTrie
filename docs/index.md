@@ -1,4 +1,4 @@
-# Welcome to PrefixTrie
+# PrefixTrie
 
 [![PyPI version](https://img.shields.io/pypi/v/prefixtrie.svg)](https://pypi.org/project/prefixtrie/)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/austinv11/PrefixTrie/ci.yml?branch=master)](https://github.com/austinv11/PrefixTrie/actions)
@@ -18,7 +18,7 @@ A high-performance Cython implementation of a prefix trie data structure for eff
 - **Memory-efficient** with collapsed node optimization
 - **Bioinformatics-optimized** for DNA/RNA/protein sequences
 
-## Basic Usage
+## Quick Start
 
 ```python
 from prefixtrie import PrefixTrie
@@ -45,4 +45,25 @@ result, corrections = trie.search("TTTT", correction_budget=1)
 print(result, corrections)  # (None, -1)
 ```
 
-For more advanced usage, please see the [API Reference](./reference.md).
+## Installation
+
+```bash
+pip install prefixtrie
+```
+
+## Documentation
+
+For detailed API documentation, see the [API Reference](reference.md).
+
+## Performance
+
+PrefixTrie is highly optimized and typically outperforms similar fuzzy matching libraries:
+
+- **Search Performance**: Substantially faster than RapidFuzz, TheFuzz, and SymSpell
+- **Substring Search**: At least on par with fuzzysearch and regex, often faster
+- **Memory Efficiency**: Collapsed node optimization reduces memory footprint
+- **Parallel Processing**: Full pickle support for multiprocessing workflows
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/austinv11/PrefixTrie/blob/master/LICENSE) file for details.
