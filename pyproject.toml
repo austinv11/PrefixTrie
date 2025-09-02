@@ -48,7 +48,7 @@ test = [
 [project.urls]
 Homepage = "https://github.com/austinv11/PrefixTrie"
 Repository = "https://github.com/austinv11/PrefixTrie"
-Documentation = "https://github.com/austinv11/PrefixTrie#readme"
+Documentation = "https//austinv11.github.io/PrefixTrie"
 "Bug Tracker" = "https://github.com/austinv11/PrefixTrie/issues"
 Changelog = "https://github.com/austinv11/PrefixTrie/releases"
 

@@ -12,7 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.x']
-        simd: [ AVX2, SSE2, NONE ]
+        simd: [AVX2, SSE2, NONE]
         exclude:
           - os: windows-latest
             simd: NONE
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for setuptools-scm
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -43,7 +43,8 @@ jobs:
             FLAGS="${{ env.OPT_FLAGS_LINUX }}"
           fi
 
-          if [ "${{ runner.os }}" != "Windows" ]; then
+          # Append SIMD flags only for x86_64 architecture on non-Windows runners
+          if [ "${{ runner.os }}" != "Windows" ] && [ "${{ runner.arch }}" = "X64" ]; then
             if [ "${{ matrix.simd }}" = "AVX2" ]; then
               FLAGS="$FLAGS -mavx2"
             elif [ "${{ matrix.simd }}" = "SSE2" ]; then
@@ -52,7 +53,7 @@ jobs:
               FLAGS="$FLAGS -mno-avx2 -mno-sse2"
             fi
           fi
-
+          
           echo "CXXFLAGS=$FLAGS" >> $GITHUB_ENV
         shell: bash
       - name: Install dependencies
