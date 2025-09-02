@@ -1,0 +1,31 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+#          pip install rapidfuzz "thefuzz[speedup]" symspellpy fuzzysearch regex matplotlib numpy
+      - name: Run benchmarks
+        run: |
+          python run_benchmark.py
+          python run_substring_benchmark.py
+      - name: Commit plots
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add benchmark_search.png benchmark_substring_search.png
+          git commit -m "Update benchmark plots" || echo "No changes to commit"
+          git push || echo "No changes to push"

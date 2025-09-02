@@ -28,6 +28,22 @@ The implementation is optimized for read-heavy workloads with several key optimi
 4. **Substitution preference** over indels (configurable)
 5. **Ultra-fast exact matching** bypassing trie overhead for correction_budget=0
 
+## Benchmarks
+
+Benchmark results are automatically generated and updated by a GitHub Actions workflow whenever a change is made.
+
+### Search Performance (vs RapidFuzz, TheFuzz, and SymSpell)
+We typically substantially outperform similar methods at fuzzy matching:
+![Benchmark Plot](benchmark_search.png)
+
+### Substring Search Performance (vs fuzzysearch and regex)
+Our substring search is at least on par with existing methods, but in some cases will be faster:
+![Benchmark Plot](benchmark_substring_search.png)
+
+### Conclusion
+Overall, PrefixTrie is highly performant and can be a great choice for most applications. Benchmark code for the search
+comparison is found [here](run_benchmark.py) and for substring search [here](run_substring_benchmark.py).
+
 ## Basic Usage
 
 ```python

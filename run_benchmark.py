@@ -9,6 +9,8 @@ import statistics
 import random
 import sys
 import os
+import numpy as np
+import matplotlib.pyplot as plt
 
 # Add the src directory to the path so we can import prefixtrie
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -27,13 +29,31 @@ except ImportError as e:
 
 try:
     import rapidfuzz
-    from rapidfuzz import process, fuzz
+    from rapidfuzz import process
     print(f"✓ RapidFuzz imported successfully (version {rapidfuzz.__version__})")
     RAPIDFUZZ_AVAILABLE = True
 except ImportError as e:
     print(f"✗ RapidFuzz not available: {e}")
     print("Install with: pip install rapidfuzz")
     RAPIDFUZZ_AVAILABLE = False
+
+try:
+    from thefuzz import process as fuzz_process
+    print("✓ TheFuzz imported successfully")
+    THEFUZZ_AVAILABLE = True
+except ImportError as e:
+    print(f"✗ TheFuzz not available: {e}")
+    print("Install with: pip install thefuzz[speedup]")
+    THEFUZZ_AVAILABLE = False
+
+try:
+    from symspellpy import SymSpell, Verbosity
+    print("✓ SymSpellPy imported successfully")
+    SYMSPELL_AVAILABLE = True
+except ImportError as e:
+    print(f"✗ SymSpellPy not available: {e}")
+    print("Install with: pip install symspellpy")
+    SYMSPELL_AVAILABLE = False
 
 
 def generate_random_strings(n: int, length: int = 10, alphabet: str = None) -> list[str]:
@@ -191,6 +211,54 @@ def benchmark_prefixtrie(entries, queries, allow_indels=True, correction_budget=
     return results, build_time, search_time
 
 
+def benchmark_thefuzz(entries, queries, score_cutoff=80):
+    """Benchmark TheFuzz performance"""
+    if not THEFUZZ_AVAILABLE:
+        return None, 0, 0
+
+    print(f"Running TheFuzz on {len(entries)} entries with {len(queries)} queries...")
+    build_time = 0  # No build phase
+
+    start_search = time.perf_counter()
+    results = []
+    for query in queries:
+        match = fuzz_process.extractOne(query, entries, score_cutoff=score_cutoff)
+        if match:
+            results.append((match[0], match[1] == 100))
+        else:
+            results.append((None, False))
+    search_time = time.perf_counter() - start_search
+
+    return results, build_time, search_time
+
+
+def benchmark_symspell(entries, queries, max_edit_distance=2):
+    """Benchmark SymSpellPy performance"""
+    if not SYMSPELL_AVAILABLE:
+        return None, 0, 0
+
+    print(f"Building SymSpell dictionary with {len(entries)} entries...")
+    start_build = time.perf_counter()
+    sym_spell = SymSpell(max_dictionary_edit_distance=max_edit_distance, prefix_length=7)
+    for entry in entries:
+        sym_spell.create_dictionary_entry(entry, 1)
+    build_time = time.perf_counter() - start_build
+
+    print(f"Running {len(queries)} SymSpell lookups...")
+    start_search = time.perf_counter()
+    results = []
+    for query in queries:
+        suggestions = sym_spell.lookup(query, Verbosity.CLOSEST, max_edit_distance=max_edit_distance)
+        if suggestions:
+            best_suggestion = suggestions[0]
+            results.append((best_suggestion.term, best_suggestion.distance == 0))
+        else:
+            results.append((None, False))
+    search_time = time.perf_counter() - start_search
+
+    return results, build_time, search_time
+
+
 def benchmark_rapidfuzz(entries, queries, score_cutoff=80):
     """Benchmark RapidFuzz performance"""
     if not RAPIDFUZZ_AVAILABLE:
@@ -240,11 +308,7 @@ def run_benchmark(n_entries=1000, n_queries=200, string_length=12, num_runs=3):
             pt_results = results
 
     # Benchmark RapidFuzz multiple times
-    rf_build_times = []
-    rf_search_times = []
-    rf_total_times = []
-    rf_results = None
-
+    rf_build_times, rf_search_times, rf_total_times, rf_results = [], [], [], None
     if RAPIDFUZZ_AVAILABLE:
         print(f"\nRunning RapidFuzz benchmark ({num_runs} runs)...")
         for run in range(num_runs):
@@ -255,6 +319,32 @@ def run_benchmark(n_entries=1000, n_queries=200, string_length=12, num_runs=3):
             rf_total_times.append(build_time + search_time)
             if rf_results is None:
                 rf_results = results
+
+    # Benchmark TheFuzz multiple times
+    tf_build_times, tf_search_times, tf_total_times, tf_results = [], [], [], None
+    if THEFUZZ_AVAILABLE:
+        print(f"\nRunning TheFuzz benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            print(f"  Run {run + 1}/{num_runs}...")
+            results, build_time, search_time = benchmark_thefuzz(entries, queries)
+            tf_build_times.append(build_time)
+            tf_search_times.append(search_time)
+            tf_total_times.append(build_time + search_time)
+            if tf_results is None:
+                tf_results = results
+
+    # Benchmark SymSpell multiple times
+    ss_build_times, ss_search_times, ss_total_times, ss_results = [], [], [], None
+    if SYMSPELL_AVAILABLE:
+        print(f"\nRunning SymSpell benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            print(f"  Run {run + 1}/{num_runs}...")
+            results, build_time, search_time = benchmark_symspell(entries, queries)
+            ss_build_times.append(build_time)
+            ss_search_times.append(search_time)
+            ss_total_times.append(build_time + search_time)
+            if ss_results is None:
+                ss_results = results
 
     # Calculate statistics
     def calc_stats(times):
@@ -276,22 +366,36 @@ def run_benchmark(n_entries=1000, n_queries=200, string_length=12, num_runs=3):
     print(f"{'PrefixTrie Total':<20} {pt_total_avg:.4f}s{'':<4} {pt_total_std:.4f}s")
 
     if RAPIDFUZZ_AVAILABLE:
-        rf_build_avg, rf_build_std = calc_stats(rf_build_times)
-        rf_search_avg, rf_search_std = calc_stats(rf_search_times)
-        rf_total_avg, rf_total_std = calc_stats(rf_total_times)
+        rf_build_avg, _ = calc_stats(rf_build_times)
+        rf_search_avg, _ = calc_stats(rf_search_times)
+        rf_total_avg, _ = calc_stats(rf_total_times)
+    else:
+        rf_build_avg, rf_search_avg, rf_total_avg = 0, 0, 0
 
-        print(f"{'RapidFuzz Build':<20} {rf_build_avg:.4f}s{'':<4} {rf_build_std:.4f}s")
-        print(f"{'RapidFuzz Search':<20} {rf_search_avg:.4f}s{'':<4} {rf_search_std:.4f}s")
-        print(f"{'RapidFuzz Total':<20} {rf_total_avg:.4f}s{'':<4} {rf_total_std:.4f}s")
+    if THEFUZZ_AVAILABLE:
+        tf_build_avg, _ = calc_stats(tf_build_times)
+        tf_search_avg, _ = calc_stats(tf_search_times)
+        tf_total_avg, _ = calc_stats(tf_total_times)
+    else:
+        tf_build_avg, tf_search_avg, tf_total_avg = 0, 0, 0
 
-        # Calculate speedups
-        if pt_search_avg > 0 and rf_search_avg > 0:
-            search_speedup = rf_search_avg / pt_search_avg
-            total_speedup = rf_total_avg / pt_total_avg
+    if SYMSPELL_AVAILABLE:
+        ss_build_avg, _ = calc_stats(ss_build_times)
+        ss_search_avg, _ = calc_stats(ss_search_times)
+        ss_total_avg, _ = calc_stats(ss_total_times)
+    else:
+        ss_build_avg, ss_search_avg, ss_total_avg = 0, 0, 0
 
-            print(f"\nSpeedup Analysis:")
-            print(f"Search speedup: {search_speedup:.2f}x {'(PrefixTrie faster)' if search_speedup > 1 else '(RapidFuzz faster)'}")
-            print(f"Total speedup:  {total_speedup:.2f}x {'(PrefixTrie faster)' if total_speedup > 1 else '(RapidFuzz faster)'}")
+    # Print results
+    print(f"\n{'Implementation':<20} {'Build Time (s)':<20} {'Search Time (s)':<20} {'Total Time (s)':<20}")
+    print("-" * 80)
+    print(f"{'PrefixTrie':<20} {pt_build_avg:<20.4f} {pt_search_avg:<20.4f} {pt_total_avg:<20.4f}")
+    if RAPIDFUZZ_AVAILABLE:
+        print(f"{'RapidFuzz':<20} {rf_build_avg:<20.4f} {rf_search_avg:<20.4f} {rf_total_avg:<20.4f}")
+    if THEFUZZ_AVAILABLE:
+        print(f"{'TheFuzz':<20} {tf_build_avg:<20.4f} {tf_search_avg:<20.4f} {tf_total_avg:<20.4f}")
+    if SYMSPELL_AVAILABLE:
+        print(f"{'SymSpell':<20} {ss_build_avg:<20.4f} {ss_search_avg:<20.4f} {ss_total_avg:<20.4f}")
 
     # Analyze result quality
     if pt_results and rf_results and RAPIDFUZZ_AVAILABLE:
@@ -315,21 +419,39 @@ def run_benchmark(n_entries=1000, n_queries=200, string_length=12, num_runs=3):
             'consistent': pt_consistent
         },
         'rapidfuzz': {
-            'build_avg': rf_build_avg if RAPIDFUZZ_AVAILABLE else 0,
-            'search_avg': rf_search_avg if RAPIDFUZZ_AVAILABLE else 0,
-            'total_avg': rf_total_avg if RAPIDFUZZ_AVAILABLE else 0
-        } if RAPIDFUZZ_AVAILABLE else None
+            'build_avg': rf_build_avg,
+            'search_avg': rf_search_avg,
+            'total_avg': rf_total_avg,
+        } if RAPIDFUZZ_AVAILABLE else None,
+        'thefuzz': {
+            'build_avg': tf_build_avg,
+            'search_avg': tf_search_avg,
+            'total_avg': tf_total_avg,
+        } if THEFUZZ_AVAILABLE else None,
+        'symspell': {
+            'build_avg': ss_build_avg,
+            'search_avg': ss_search_avg,
+            'total_avg': ss_total_avg,
+        } if SYMSPELL_AVAILABLE else None
     }
 
 
 def main():
     """Run the benchmark suite"""
-    print("PrefixTrie vs RapidFuzz Benchmark Suite")
+    import argparse
+    parser = argparse.ArgumentParser(description="PrefixTrie vs Competitors Benchmark Suite")
+    parser.add_argument("--output-plot", default="benchmark_search.png", help="Output file for the benchmark plot")
+    args = parser.parse_args()
+
+    print("PrefixTrie vs Competitors Benchmark Suite")
     print("=" * 60)
 
     if not RAPIDFUZZ_AVAILABLE:
         print("Warning: RapidFuzz not available. Only testing PrefixTrie.")
-        print("Install RapidFuzz with: pip install rapidfuzz")
+    if not THEFUZZ_AVAILABLE:
+        print("Warning: TheFuzz not available. Only testing PrefixTrie.")
+    if not SYMSPELL_AVAILABLE:
+        print("Warning: SymSpellPy not available. Only testing PrefixTrie.")
 
     # Set random seed for reproducible results
     random.seed(42)
@@ -441,58 +563,36 @@ def main():
             print(f"Error in specialized scenario '{spec['name']}': {e}")
             continue
 
-    # Print comprehensive summary
-    print(f"\n\n{'='*100}")
-    print("COMPREHENSIVE SUMMARY")
-    print("="*100)
-    print(f"{'Scenario':<25} {'Entries':<8} {'Queries':<8} {'PT Search':<10} {'RF Search':<10} {'PT Total':<10} {'RF Total':<10} {'Speedup':<8}")
-    print("-" * 100)
+    # Generate plot
+    scenarios = [r['scenario'] for r in all_results]
+    pt_search_times = [r['prefixtrie']['search_avg'] for r in all_results]
+    rf_search_times = [r['rapidfuzz']['search_avg'] if r.get('rapidfuzz') else 0 for r in all_results]
+    tf_search_times = [r['thefuzz']['search_avg'] if r.get('thefuzz') else 0 for r in all_results]
+    ss_search_times = [r['symspell']['search_avg'] if r.get('symspell') else 0 for r in all_results]
 
-    for result in all_results:
-        pt_search = result['prefixtrie']['search_avg']
-        pt_total = result['prefixtrie']['total_avg']
-        entries_count = result.get('entries_count', 'N/A')
-        queries_count = result.get('queries_count', 'N/A')
+    x = np.arange(len(scenarios))
+    width = 0.2
 
-        if result['rapidfuzz']:
-            rf_search = result['rapidfuzz']['search_avg']
-            rf_total = result['rapidfuzz']['total_avg']
-            speedup = rf_search / pt_search if pt_search > 0 else 0
-
-            print(f"{result['scenario']:<25} {entries_count:<8} {queries_count:<8} "
-                  f"{pt_search:.4f}s{'':<2} {rf_search:.4f}s{'':<2} "
-                  f"{pt_total:.4f}s{'':<2} {rf_total:.4f}s{'':<2} {speedup:.2f}x")
-        else:
-            print(f"{result['scenario']:<25} {entries_count:<8} {queries_count:<8} "
-                  f"{pt_search:.4f}s{'':<2} {'N/A':<10} "
-                  f"{pt_total:.4f}s{'':<2} {'N/A':<10} {'N/A':<8}")
-
-    # Calculate overall statistics
+    fig, ax = plt.subplots(figsize=(16, 9))
+    ax.bar(x - width*1.5, pt_search_times, width, label='PrefixTrie')
     if RAPIDFUZZ_AVAILABLE:
-        search_speedups = []
-        total_speedups = []
+        ax.bar(x - width*0.5, rf_search_times, width, label='RapidFuzz')
+    if THEFUZZ_AVAILABLE:
+        ax.bar(x + width*0.5, tf_search_times, width, label='TheFuzz')
+    if SYMSPELL_AVAILABLE:
+        ax.bar(x + width*1.5, ss_search_times, width, label='SymSpell')
 
-        for result in all_results:
-            if result['rapidfuzz'] and result['prefixtrie']['search_avg'] > 0:
-                search_speedup = result['rapidfuzz']['search_avg'] / result['prefixtrie']['search_avg']
-                total_speedup = result['rapidfuzz']['total_avg'] / result['prefixtrie']['total_avg']
+    ax.set_ylabel('Search Time (s) (Lower is better)')
+    ax.set_title('Benchmark: Search Performance')
+    ax.set_xticks(x)
+    ax.set_xticklabels(scenarios, rotation=45, ha='right')
+    ax.legend()
+    ax.set_yscale('log')
+    ax.set_xlabel('Scenario')
+    fig.tight_layout()
+    plt.savefig(args.output_plot)
 
-                search_speedups.append(search_speedup)
-                total_speedups.append(total_speedup)
-
-        if search_speedups:
-            avg_search_speedup = statistics.mean(search_speedups)
-            avg_total_speedup = statistics.mean(total_speedups)
-            median_search_speedup = statistics.median(search_speedups)
-            median_total_speedup = statistics.median(total_speedups)
-
-            print(f"\nOVERALL PERFORMANCE ANALYSIS:")
-            print(f"Average search speedup: {avg_search_speedup:.2f}x {'(PrefixTrie faster)' if avg_search_speedup > 1 else '(RapidFuzz faster)'}")
-            print(f"Median search speedup:  {median_search_speedup:.2f}x {'(PrefixTrie faster)' if median_search_speedup > 1 else '(RapidFuzz faster)'}")
-            print(f"Average total speedup:  {avg_total_speedup:.2f}x {'(PrefixTrie faster)' if avg_total_speedup > 1 else '(RapidFuzz faster)'}")
-            print(f"Median total speedup:   {median_total_speedup:.2f}x {'(PrefixTrie faster)' if median_total_speedup > 1 else '(RapidFuzz faster)'}")
-
-    print("\nBenchmark complete!")
+    print(f"\nBenchmark plot saved to {args.output_plot}")
 
 
 def run_specialized_benchmark(name: str, entries: list[str], queries: list[str], num_runs: int = 3):
@@ -519,11 +619,7 @@ def run_specialized_benchmark(name: str, entries: list[str], queries: list[str],
             pt_results = results
 
     # Benchmark RapidFuzz multiple times
-    rf_build_times = []
-    rf_search_times = []
-    rf_total_times = []
-    rf_results = None
-
+    rf_build_times, rf_search_times, rf_total_times, rf_results = [], [], [], None
     if RAPIDFUZZ_AVAILABLE:
         print(f"\nRunning RapidFuzz benchmark ({num_runs} runs)...")
         for run in range(num_runs):
@@ -534,6 +630,32 @@ def run_specialized_benchmark(name: str, entries: list[str], queries: list[str],
             rf_total_times.append(build_time + search_time)
             if rf_results is None:
                 rf_results = results
+
+    # Benchmark TheFuzz multiple times
+    tf_build_times, tf_search_times, tf_total_times, tf_results = [], [], [], None
+    if THEFUZZ_AVAILABLE:
+        print(f"\nRunning TheFuzz benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            print(f"  Run {run + 1}/{num_runs}...")
+            results, build_time, search_time = benchmark_thefuzz(entries, queries)
+            tf_build_times.append(build_time)
+            tf_search_times.append(search_time)
+            tf_total_times.append(build_time + search_time)
+            if tf_results is None:
+                tf_results = results
+
+    # Benchmark SymSpell multiple times
+    ss_build_times, ss_search_times, ss_total_times, ss_results = [], [], [], None
+    if SYMSPELL_AVAILABLE:
+        print(f"\nRunning SymSpell benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            print(f"  Run {run + 1}/{num_runs}...")
+            results, build_time, search_time = benchmark_symspell(entries, queries)
+            ss_build_times.append(build_time)
+            ss_search_times.append(search_time)
+            ss_total_times.append(build_time + search_time)
+            if ss_results is None:
+                ss_results = results
 
     # Calculate statistics
     def calc_stats(times):
@@ -555,22 +677,36 @@ def run_specialized_benchmark(name: str, entries: list[str], queries: list[str],
     print(f"{'PrefixTrie Total':<20} {pt_total_avg:.4f}s{'':<4} {pt_total_std:.4f}s")
 
     if RAPIDFUZZ_AVAILABLE:
-        rf_build_avg, rf_build_std = calc_stats(rf_build_times)
-        rf_search_avg, rf_search_std = calc_stats(rf_search_times)
-        rf_total_avg, rf_total_std = calc_stats(rf_total_times)
+        rf_build_avg, _ = calc_stats(rf_build_times)
+        rf_search_avg, _ = calc_stats(rf_search_times)
+        rf_total_avg, _ = calc_stats(rf_total_times)
+    else:
+        rf_build_avg, rf_search_avg, rf_total_avg = 0, 0, 0
 
-        print(f"{'RapidFuzz Build':<20} {rf_build_avg:.4f}s{'':<4} {rf_build_std:.4f}s")
-        print(f"{'RapidFuzz Search':<20} {rf_search_avg:.4f}s{'':<4} {rf_search_std:.4f}s")
-        print(f"{'RapidFuzz Total':<20} {rf_total_avg:.4f}s{'':<4} {rf_total_std:.4f}s")
+    if THEFUZZ_AVAILABLE:
+        tf_build_avg, _ = calc_stats(tf_build_times)
+        tf_search_avg, _ = calc_stats(tf_search_times)
+        tf_total_avg, _ = calc_stats(tf_total_times)
+    else:
+        tf_build_avg, tf_search_avg, tf_total_avg = 0, 0, 0
 
-        # Calculate speedups
-        if pt_search_avg > 0 and rf_search_avg > 0:
-            search_speedup = rf_search_avg / pt_search_avg
-            total_speedup = rf_total_avg / pt_total_avg
+    if SYMSPELL_AVAILABLE:
+        ss_build_avg, _ = calc_stats(ss_build_times)
+        ss_search_avg, _ = calc_stats(ss_search_times)
+        ss_total_avg, _ = calc_stats(ss_total_times)
+    else:
+        ss_build_avg, ss_search_avg, ss_total_avg = 0, 0, 0
 
-            print(f"\nSpeedup Analysis:")
-            print(f"Search speedup: {search_speedup:.2f}x {'(PrefixTrie faster)' if search_speedup > 1 else '(RapidFuzz faster)'}")
-            print(f"Total speedup:  {total_speedup:.2f}x {'(PrefixTrie faster)' if total_speedup > 1 else '(RapidFuzz faster)'}")
+    # Print results
+    print(f"\n{'Implementation':<20} {'Build Time (s)':<20} {'Search Time (s)':<20} {'Total Time (s)':<20}")
+    print("-" * 80)
+    print(f"{'PrefixTrie':<20} {pt_build_avg:<20.4f} {pt_search_avg:<20.4f} {pt_total_avg:<20.4f}")
+    if RAPIDFUZZ_AVAILABLE:
+        print(f"{'RapidFuzz':<20} {rf_build_avg:<20.4f} {rf_search_avg:<20.4f} {rf_total_avg:<20.4f}")
+    if THEFUZZ_AVAILABLE:
+        print(f"{'TheFuzz':<20} {tf_build_avg:<20.4f} {tf_search_avg:<20.4f} {tf_total_avg:<20.4f}")
+    if SYMSPELL_AVAILABLE:
+        print(f"{'SymSpell':<20} {ss_build_avg:<20.4f} {ss_search_avg:<20.4f} {ss_total_avg:<20.4f}")
 
     # Validate consistency of results
     print(f"\nValidating consistency of results...")
@@ -584,10 +720,20 @@ def run_specialized_benchmark(name: str, entries: list[str], queries: list[str],
             'consistent': pt_consistent
         },
         'rapidfuzz': {
-            'build_avg': rf_build_avg if RAPIDFUZZ_AVAILABLE else 0,
-            'search_avg': rf_search_avg if RAPIDFUZZ_AVAILABLE else 0,
-            'total_avg': rf_total_avg if RAPIDFUZZ_AVAILABLE else 0
+            'build_avg': rf_build_avg,
+            'search_avg': rf_search_avg,
+            'total_avg': rf_total_avg,
         } if RAPIDFUZZ_AVAILABLE else None,
+        'thefuzz': {
+            'build_avg': tf_build_avg,
+            'search_avg': tf_search_avg,
+            'total_avg': tf_total_avg,
+        } if THEFUZZ_AVAILABLE else None,
+        'symspell': {
+            'build_avg': ss_build_avg,
+            'search_avg': ss_search_avg,
+            'total_avg': ss_total_avg,
+        } if SYMSPELL_AVAILABLE else None,
         'entries_count': len(entries),
         'queries_count': len(queries)
     }

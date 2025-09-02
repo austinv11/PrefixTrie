@@ -29,12 +29,23 @@ except ImportError as e:
 try:
     import fuzzysearch
     from fuzzysearch import find_near_matches
+
     print(f"✓ fuzzysearch imported successfully")
     FUZZYSEARCH_AVAILABLE = True
 except ImportError as e:
     print(f"✗ fuzzysearch not available: {e}")
     print("Install with: pip install fuzzysearch")
     FUZZYSEARCH_AVAILABLE = False
+
+try:
+    import regex
+
+    print("✓ regex imported successfully")
+    REGEX_AVAILABLE = True
+except ImportError as e:
+    print(f"✗ regex not available: {e}")
+    print("Install with: pip install regex")
+    REGEX_AVAILABLE = False
 
 
 def generate_random_strings(n: int, length: int = 10, alphabet: str = None) -> list[str]:
@@ -85,9 +96,9 @@ def generate_realistic_words(n: int) -> list[str]:
 
 
 def generate_target_strings_with_embedded_patterns(patterns: list[str],
-                                                  target_count: int = 100,
-                                                  target_length: int = 200,
-                                                  pattern_ratio: float = 0.7) -> list[str]:
+                                                   target_count: int = 100,
+                                                   target_length: int = 200,
+                                                   pattern_ratio: float = 0.7) -> list[str]:
     """Generate target strings with embedded patterns for substring search testing"""
     targets = []
     alphabet = 'abcdefghijklmnopqrstuvwxyz'
@@ -160,6 +171,45 @@ def benchmark_prefixtrie_substring(patterns: list[str], targets: list[str], max_
     for target in targets:
         result = trie.search_substring(target, correction_budget=max_corrections)
         results.append(result)
+    search_time = time.perf_counter() - start_search
+
+    return results, build_time, search_time
+
+
+def benchmark_regex(patterns: list[str], targets: list[str], max_dist: int = 1):
+    """Benchmark regex performance"""
+    if not REGEX_AVAILABLE:
+        return None, 0, 0
+
+    print(f"Running regex on {len(patterns)} patterns with {len(targets)} targets...")
+    build_time = 0  # No build phase
+
+    # Create a single regex pattern to find any of the patterns
+    # This is a common way to use regex for this task
+    regex_pattern = "|".join(f"({p}){{e<={max_dist}}}" for p in patterns)
+    try:
+        compiled_regex = regex.compile(regex_pattern)
+    except regex.error as e:
+        print(f"  Regex compilation failed: {e}")
+        # Return dummy results if compilation fails
+        return [(None, False, -1, -1)] * len(targets), 0, 0
+
+    start_search = time.perf_counter()
+    results = []
+    for target in targets:
+        match = compiled_regex.search(target)
+        if match:
+            # Figure out which pattern matched
+            found_pattern = None
+            for i, p in enumerate(patterns):
+                if match.group(i + 1) is not None:
+                    found_pattern = p
+                    break
+
+            # regex doesn't easily give the number of corrections, so we can't check for exactness easily
+            results.append((found_pattern, False, match.start(), match.end()))
+        else:
+            results.append((None, False, -1, -1))
     search_time = time.perf_counter() - start_search
 
     return results, build_time, search_time
@@ -240,12 +290,13 @@ def validate_results_consistency(patterns: list[str], pt_results: list, fs_resul
     return len(inconsistencies) == 0
 
 
-def run_substring_benchmark(patterns: list[str], targets: list[str], max_corrections: int = 1, num_runs: int = 3, test_name: str = ""):
+def run_substring_benchmark(patterns: list[str], targets: list[str], max_corrections: int = 1, num_runs: int = 3,
+                            test_name: str = ""):
     """Run a complete substring search benchmark comparison"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"SUBSTRING BENCHMARK: {test_name}")
     print(f"Patterns: {len(patterns)}, Targets: {len(targets)}, Max corrections: {max_corrections}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Benchmark PrefixTrie multiple times
     pt_build_times = []
@@ -264,11 +315,7 @@ def run_substring_benchmark(patterns: list[str], targets: list[str], max_correct
             pt_results = results
 
     # Benchmark fuzzysearch multiple times
-    fs_build_times = []
-    fs_search_times = []
-    fs_total_times = []
-    fs_results = None
-
+    fs_build_times, fs_search_times, fs_total_times, fs_results = [], [], [], None
     if FUZZYSEARCH_AVAILABLE:
         print(f"\nRunning fuzzysearch benchmark ({num_runs} runs)...")
         for run in range(num_runs):
@@ -279,6 +326,19 @@ def run_substring_benchmark(patterns: list[str], targets: list[str], max_correct
             fs_total_times.append(build_time + search_time)
             if fs_results is None:
                 fs_results = results
+
+    # Benchmark regex multiple times
+    rx_build_times, rx_search_times, rx_total_times, rx_results = [], [], [], None
+    if REGEX_AVAILABLE:
+        print(f"\nRunning regex benchmark ({num_runs} runs)...")
+        for run in range(num_runs):
+            print(f"  Run {run + 1}/{num_runs}...")
+            results, build_time, search_time = benchmark_regex(patterns, targets, max_corrections)
+            rx_build_times.append(build_time)
+            rx_search_times.append(search_time)
+            rx_total_times.append(build_time + search_time)
+            if rx_results is None:
+                rx_results = results
 
     # Calculate statistics
     def calc_stats(times):
@@ -300,22 +360,27 @@ def run_substring_benchmark(patterns: list[str], targets: list[str], max_correct
     print(f"{'PrefixTrie Total':<20} {pt_total_avg:.4f}s{'':<4} {pt_total_std:.4f}s")
 
     if FUZZYSEARCH_AVAILABLE:
-        fs_build_avg, fs_build_std = calc_stats(fs_build_times)
-        fs_search_avg, fs_search_std = calc_stats(fs_search_times)
-        fs_total_avg, fs_total_std = calc_stats(fs_total_times)
+        fs_build_avg, _ = calc_stats(fs_build_times)
+        fs_search_avg, _ = calc_stats(fs_search_times)
+        fs_total_avg, _ = calc_stats(fs_total_times)
+    else:
+        fs_build_avg, fs_search_avg, fs_total_avg = 0, 0, 0
 
-        print(f"{'fuzzysearch Build':<20} {fs_build_avg:.4f}s{'':<4} {fs_build_std:.4f}s")
-        print(f"{'fuzzysearch Search':<20} {fs_search_avg:.4f}s{'':<4} {fs_search_std:.4f}s")
-        print(f"{'fuzzysearch Total':<20} {fs_total_avg:.4f}s{'':<4} {fs_total_std:.4f}s")
+    if REGEX_AVAILABLE:
+        rx_build_avg, _ = calc_stats(rx_build_times)
+        rx_search_avg, _ = calc_stats(rx_search_times)
+        rx_total_avg, _ = calc_stats(rx_total_times)
+    else:
+        rx_build_avg, rx_search_avg, rx_total_avg = 0, 0, 0
 
-        # Calculate speedups
-        if pt_search_avg > 0 and fs_search_avg > 0:
-            search_speedup = fs_search_avg / pt_search_avg
-            total_speedup = fs_total_avg / pt_total_avg
-
-            print(f"\nSpeedup Analysis:")
-            print(f"Search speedup: {search_speedup:.2f}x {'(PrefixTrie faster)' if search_speedup > 1 else '(fuzzysearch faster)'}")
-            print(f"Total speedup:  {total_speedup:.2f}x {'(PrefixTrie faster)' if total_speedup > 1 else '(fuzzysearch faster)'}")
+    # Print results
+    print(f"\n{'Implementation':<20} {'Build Time (s)':<20} {'Search Time (s)':<20} {'Total Time (s)':<20}")
+    print("-" * 80)
+    print(f"{'PrefixTrie':<20} {pt_build_avg:<20.4f} {pt_search_avg:<20.4f} {pt_total_avg:<20.4f}")
+    if FUZZYSEARCH_AVAILABLE:
+        print(f"{'fuzzysearch':<20} {fs_build_avg:<20.4f} {fs_search_avg:<20.4f} {fs_total_avg:<20.4f}")
+    if REGEX_AVAILABLE:
+        print(f"{'regex':<20} {rx_build_avg:<20.4f} {rx_search_avg:<20.4f} {rx_total_avg:<20.4f}")
 
     # Analyze result quality
     if pt_results and fs_results and FUZZYSEARCH_AVAILABLE:
@@ -323,12 +388,13 @@ def run_substring_benchmark(patterns: list[str], targets: list[str], max_correct
         fs_found = sum(1 for r in fs_results if r[0] is not None)
 
         print(f"\nResult Quality:")
-        print(f"PrefixTrie found: {pt_found}/{len(targets)} targets ({pt_found/len(targets)*100:.1f}%)")
-        print(f"fuzzysearch found: {fs_found}/{len(targets)} targets ({fs_found/len(targets)*100:.1f}%)")
+        print(f"PrefixTrie found: {pt_found}/{len(targets)} targets ({pt_found / len(targets) * 100:.1f}%)")
+        print(f"fuzzysearch found: {fs_found}/{len(targets)} targets ({fs_found / len(targets) * 100:.1f}%)")
 
     # Validate consistency of results
     if pt_results and fs_results and FUZZYSEARCH_AVAILABLE:
-        pt_consistent = validate_results_consistency(patterns, pt_results, fs_results, f"{test_name} - Substring Search")
+        pt_consistent = validate_results_consistency(patterns, pt_results, fs_results,
+                                                     f"{test_name} - Substring Search")
 
     return {
         'prefixtrie': {
@@ -337,23 +403,39 @@ def run_substring_benchmark(patterns: list[str], targets: list[str], max_correct
             'total_avg': pt_total_avg,
         },
         'fuzzysearch': {
-            'build_avg': fs_build_avg if FUZZYSEARCH_AVAILABLE else 0,
-            'search_avg': fs_search_avg if FUZZYSEARCH_AVAILABLE else 0,
-            'total_avg': fs_total_avg if FUZZYSEARCH_AVAILABLE else 0
+            'build_avg': fs_build_avg,
+            'search_avg': fs_search_avg,
+            'total_avg': fs_total_avg,
         } if FUZZYSEARCH_AVAILABLE else None,
+        'regex': {
+            'build_avg': rx_build_avg,
+            'search_avg': rx_search_avg,
+            'total_avg': rx_total_avg,
+        } if REGEX_AVAILABLE else None,
         'patterns_count': len(patterns),
         'targets_count': len(targets)
     }
 
 
+import argparse
+import matplotlib.pyplot as plt
+import numpy as np
+
+
 def main():
     """Run the substring search benchmark suite"""
-    print("PrefixTrie vs fuzzysearch Substring Search Benchmark Suite")
+    parser = argparse.ArgumentParser(description="PrefixTrie vs Competitors Substring Search Benchmark Suite")
+    parser.add_argument("--output-plot", default="benchmark_substring_search.png",
+                        help="Output file for the benchmark plot")
+    args = parser.parse_args()
+
+    print("PrefixTrie vs Competitors Substring Search Benchmark Suite")
     print("=" * 60)
 
     if not FUZZYSEARCH_AVAILABLE:
-        print("Warning: fuzzysearch not available. Only testing PrefixTrie.")
-        print("Install fuzzysearch with: pip install fuzzysearch")
+        print("Warning: fuzzysearch not available.")
+    if not REGEX_AVAILABLE:
+        print("Warning: regex not available.")
 
     # Set random seed for reproducible results
     random.seed(42)
@@ -456,59 +538,33 @@ def main():
             print(f"Error in scenario '{scenario['name']}': {e}")
             continue
 
-    # Print comprehensive summary
-    print(f"\n\n{'='*100}")
-    print("COMPREHENSIVE SUMMARY - SUBSTRING SEARCH BENCHMARKS")
-    print("="*100)
-    print(f"{'Scenario':<25} {'Patterns':<9} {'Targets':<8} {'Errors':<6} {'PT Search':<10} {'FS Search':<10} {'PT Total':<10} {'FS Total':<10} {'Speedup':<8}")
-    print("-" * 100)
+    # Generate plot
+    scenarios = [r['scenario'] for r in all_results]
+    pt_search_times = [r['prefixtrie']['search_avg'] for r in all_results]
+    fs_search_times = [r['fuzzysearch']['search_avg'] if r.get('fuzzysearch') else 0 for r in all_results]
+    rx_search_times = [r['regex']['search_avg'] if r.get('regex') else 0 for r in all_results]
 
-    for result in all_results:
-        pt_search = result['prefixtrie']['search_avg']
-        pt_total = result['prefixtrie']['total_avg']
-        patterns_count = result['patterns_count']
-        targets_count = result['targets_count']
-        max_corrections = result['max_corrections']
+    x = np.arange(len(scenarios))
+    width = 0.25
 
-        if result['fuzzysearch']:
-            fs_search = result['fuzzysearch']['search_avg']
-            fs_total = result['fuzzysearch']['total_avg']
-            speedup = fs_search / pt_search if pt_search > 0 else 0
-
-            print(f"{result['scenario']:<25} {patterns_count:<9} {targets_count:<8} {max_corrections:<6} "
-                  f"{pt_search:.4f}s{'':<2} {fs_search:.4f}s{'':<2} "
-                  f"{pt_total:.4f}s{'':<2} {fs_total:.4f}s{'':<2} {speedup:.2f}x")
-        else:
-            print(f"{result['scenario']:<25} {patterns_count:<9} {targets_count:<8} {max_corrections:<6} "
-                  f"{pt_search:.4f}s{'':<2} {'N/A':<10} "
-                  f"{pt_total:.4f}s{'':<2} {'N/A':<10} {'N/A':<8}")
-
-    # Calculate overall statistics
+    fig, ax = plt.subplots(figsize=(16, 9))
+    ax.bar(x - width, pt_search_times, width, label='PrefixTrie')
     if FUZZYSEARCH_AVAILABLE:
-        search_speedups = []
-        total_speedups = []
+        ax.bar(x, fs_search_times, width, label='fuzzysearch')
+    if REGEX_AVAILABLE:
+        ax.bar(x + width, rx_search_times, width, label='regex')
 
-        for result in all_results:
-            if result['fuzzysearch'] and result['prefixtrie']['search_avg'] > 0:
-                search_speedup = result['fuzzysearch']['search_avg'] / result['prefixtrie']['search_avg']
-                total_speedup = result['fuzzysearch']['total_avg'] / result['prefixtrie']['total_avg']
+    ax.set_ylabel('Search Time (s) (Lower is better)')
+    ax.set_title('Benchmark: Substring Search Performance')
+    ax.set_xticks(x)
+    ax.set_xticklabels(scenarios, rotation=45, ha='right')
+    ax.legend()
+    ax.set_yscale('log')
+    ax.set_xlabel('Scenario')
+    fig.tight_layout()
+    plt.savefig(args.output_plot)
 
-                search_speedups.append(search_speedup)
-                total_speedups.append(total_speedup)
-
-        if search_speedups:
-            avg_search_speedup = statistics.mean(search_speedups)
-            avg_total_speedup = statistics.mean(total_speedups)
-            median_search_speedup = statistics.median(search_speedups)
-            median_total_speedup = statistics.median(total_speedups)
-
-            print(f"\nOVERALL PERFORMANCE ANALYSIS:")
-            print(f"Average search speedup: {avg_search_speedup:.2f}x {'(PrefixTrie faster)' if avg_search_speedup > 1 else '(fuzzysearch faster)'}")
-            print(f"Median search speedup:  {median_search_speedup:.2f}x {'(PrefixTrie faster)' if median_search_speedup > 1 else '(fuzzysearch faster)'}")
-            print(f"Average total speedup:  {avg_total_speedup:.2f}x {'(PrefixTrie faster)' if avg_total_speedup > 1 else '(fuzzysearch faster)'}")
-            print(f"Median total speedup:   {median_total_speedup:.2f}x {'(PrefixTrie faster)' if median_total_speedup > 1 else '(fuzzysearch faster)'}")
-
-    print("\nSubstring search benchmark complete!")
+    print(f"\nBenchmark plot saved to {args.output_plot}")
 
 
 if __name__ == "__main__":
