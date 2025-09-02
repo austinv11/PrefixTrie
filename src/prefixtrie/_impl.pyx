@@ -704,6 +704,7 @@ cdef class cPrefixTrie:
         # Convert result to Python types
         if best_result.found:
             found_str_py = c_str_to_py_str(best_result.found_str)
+            free(best_result.found_str)
             return found_str_py, best_result.start_pos, best_result.end_pos - best_result.start_pos
         else:
             return None, -1, -1
