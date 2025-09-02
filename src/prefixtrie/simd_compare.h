@@ -22,6 +22,13 @@
 static inline int simd_strncmp(const char* s1, const char* s2, size_t n);
 
 /**
+ * Calculates the length of a string.
+ * This function is a SIMD-accelerated version of strlen.
+ * Uses vector instructions to find the null terminator by processing 16-32 bytes at once.
+ */
+static inline size_t simd_strlen(const char* s);
+
+/**
  * Finds the first occurrence of any character from `needles` in `s`.
  * This function is a SIMD-accelerated equivalent of a multi-character strchr.
  * Uses vector instructions to check multiple characters against multiple needles simultaneously.
@@ -70,6 +77,43 @@ static inline int simd_strncmp(const char* s1, const char* s2, size_t n) {
 
     // Handle remaining bytes (< 32) using standard strncmp
     return strncmp(s1 + i, s2 + i, n - i);
+}
+
+static inline size_t simd_strlen(const char* s) {
+    const char* p = s;
+    // Align the pointer to a 32-byte boundary for faster loads
+    while ((uintptr_t)p % 32 != 0) {
+        if (*p == '\0') return p - s;
+        p++;
+    }
+
+    // Create a vector of all zeros to find the null terminator
+    __m256i v_zero = _mm256_setzero_si256();
+
+    // Process 32-byte chunks
+    while (1) {
+        // Load 32 bytes from the string
+        __m256i v_str = _mm256_load_si256((const __m256i*)p);
+
+        // Compare with zero to find null bytes
+        __m256i v_equal_zero = _mm256_cmpeq_epi8(v_str, v_zero);
+
+        // Create a mask from the comparison result
+        int mask = _mm256_movemask_epi8(v_equal_zero);
+
+        // If the mask is not zero, a null byte was found
+        if (mask != 0) {
+            // Find the index of the first null byte
+            #if defined(__GNUC__) || defined(__clang__)
+            int null_byte_index = __builtin_ctz(mask);
+            #else
+            unsigned long null_byte_index;
+            _BitScanForward(&null_byte_index, mask);
+            #endif
+            return (p - s) + null_byte_index;
+        }
+        p += 32; // Move to the next 32-byte chunk
+    }
 }
 
 static inline const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles) {
@@ -165,6 +209,43 @@ static inline int simd_strncmp(const char* s1, const char* s2, size_t n) {
 
     // Handle remaining bytes (< 16) using standard strncmp
     return strncmp(s1 + i, s2 + i, n - i);
+}
+
+static inline size_t simd_strlen(const char* s) {
+    const char* p = s;
+    // Align the pointer to a 16-byte boundary for faster loads
+    while ((uintptr_t)p % 16 != 0) {
+        if (*p == '\0') return p - s;
+        p++;
+    }
+
+    // Create a vector of all zeros to find the null terminator
+    __m128i v_zero = _mm_setzero_si128();
+
+    // Process 16-byte chunks
+    while (1) {
+        // Load 16 bytes from the string
+        __m128i v_str = _mm_load_si128((const __m128i*)p);
+
+        // Compare with zero to find null bytes
+        __m128i v_equal_zero = _mm_cmpeq_epi8(v_str, v_zero);
+
+        // Create a mask from the comparison result
+        int mask = _mm_movemask_epi8(v_equal_zero);
+
+        // If the mask is not zero, a null byte was found
+        if (mask != 0) {
+            // Find the index of the first null byte
+            #if defined(__GNUC__) || defined(__clang__)
+            int null_byte_index = __builtin_ctz(mask);
+            #else
+            unsigned long null_byte_index;
+            _BitScanForward(&null_byte_index, mask);
+            #endif
+            return (p - s) + null_byte_index;
+        }
+        p += 16; // Move to the next 16-byte chunk
+    }
 }
 
 static inline const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles) {
@@ -269,6 +350,46 @@ static inline int simd_strncmp(const char* s1, const char* s2, size_t n) {
     return strncmp(s1 + i, s2 + i, n - i);
 }
 
+static inline size_t simd_strlen(const char* s) {
+    const char* p = s;
+
+#if defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
+    // Align the pointer to a 16-byte boundary for faster loads
+    while ((uintptr_t)p % 16 != 0) {
+        if (*p == '\0') return p - s;
+        p++;
+    }
+
+    // Create a vector of all zeros to find the null terminator
+    uint8x16_t v_zero = vdupq_n_u8(0);
+
+    // Process 16-byte chunks
+    while (1) {
+        // Load 16 bytes from the string
+        uint8x16_t v_str = vld1q_u8((const uint8_t*)p);
+
+        // Compare with zero to find null bytes
+        uint8x16_t v_equal_zero = vceqq_u8(v_str, v_zero);
+
+        // Check if any byte is zero
+        if (vmaxvq_u8(v_equal_zero) > 0) {
+            uint64x2_t v_u64 = vreinterpretq_u64_u8(v_equal_zero);
+            uint64_t low = vgetq_lane_u64(v_u64, 0);
+            uint64_t high = vgetq_lane_u64(v_u64, 1);
+
+            if (low != 0) {
+                return (p - s) + (__builtin_ctzll(low) / 8);
+            } else {
+                return (p - s) + 8 + (__builtin_ctzll(high) / 8);
+            }
+        }
+        p += 16; // Move to the next 16-byte chunk
+    }
+#endif
+    // Fallback for non-NEON or non-64-bit ARM
+    return strlen(s);
+}
+
 static inline const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles) {
     size_t i = 0;
 
@@ -335,6 +456,10 @@ static inline const char* simd_strchr_any(const char* s, size_t n, const char* n
 static inline int simd_strncmp(const char* s1, const char* s2, size_t n) {
     // Simply use the standard library implementation
     return strncmp(s1, s2, n);
+}
+
+static inline size_t simd_strlen(const char* s) {
+    return strlen(s);
 }
 
 static inline const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles) {

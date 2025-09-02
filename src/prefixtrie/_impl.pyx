@@ -17,6 +17,7 @@ import cython
 # -----------------------------
 cdef extern from "simd_compare.h" nogil:
     int simd_strncmp(const char* s1, const char* s2, size_t n)
+    size_t simd_strlen(const char* s)
     const char* simd_strchr_any(const char* s, size_t n, const char* needles, size_t num_needles)
 
 ctypedef char* Str
@@ -332,7 +333,7 @@ cdef class cPrefixTrie:
                 seen[i] = 0
             for entry in entries:
                 c_entry = py_str_to_c_str(entry)
-                for j in range(<int> strlen(c_entry)):
+                for j in range(<int> simd_strlen(c_entry)):
                     seen[<unsigned char> c_entry[j]] = True
                 free(c_entry)
             self.alphabet.size = 0
@@ -438,7 +439,7 @@ cdef class cPrefixTrie:
         cdef TrieNode* node = self.root
         cdef char ch
         cdef Str c_entry = py_str_to_c_str(entry)
-        cdef size_t i, n = strlen(c_entry)
+        cdef size_t i, n = simd_strlen(c_entry)
         cdef int idx
 
         try:
@@ -497,7 +498,7 @@ cdef class cPrefixTrie:
         cdef TrieNode* last_node = NULL
         cdef TrieNode* new_node = NULL
         cdef Str c_entry = py_str_to_c_str(entry)
-        cdef size_t i, k, n = strlen(c_entry)
+        cdef size_t i, k, n = simd_strlen(c_entry)
         cdef int idx, idx_next
 
         if n > self.max_length:
@@ -518,7 +519,7 @@ cdef class cPrefixTrie:
                     new_node = self._create_node(last_id, c_entry[k], NULL, <size_t> self.alphabet.size)
                     last_id += 1
                     if k == n - 1:
-                        new_node.leaf_value = <Str> malloc(strlen(c_entry) + 1)
+                        new_node.leaf_value = <Str> malloc(simd_strlen(c_entry) + 1)
                         if not new_node.leaf_value:
                             raise MemoryError("Failed to allocate memory for leaf value")
                         strcpy(new_node.leaf_value, c_entry)
@@ -530,7 +531,7 @@ cdef class cPrefixTrie:
                 break
 
         if not inserted_new and node.leaf_value == NULL:
-            node.leaf_value = <Str> malloc(strlen(c_entry) + 1)
+            node.leaf_value = <Str> malloc(simd_strlen(c_entry) + 1)
             if not node.leaf_value:
                 raise MemoryError("Failed to allocate memory for leaf value")
             strcpy(node.leaf_value, c_entry)
@@ -564,7 +565,7 @@ cdef class cPrefixTrie:
             self._compile(child_at(node, 0))
             # Root (value == '\0') should not prefix its value
             if node.value == '\0':
-                node.collapsed = <Str> malloc(strlen(child_at(node, 0).collapsed) + 1)
+                node.collapsed = <Str> malloc(simd_strlen(child_at(node, 0).collapsed) + 1)
                 if not node.collapsed:
                     raise MemoryError("Failed to allocate memory for collapsed value")
                 strcpy(node.collapsed, child_at(node, 0).collapsed)
@@ -628,7 +629,7 @@ cdef class cPrefixTrie:
         """
         cdef Str c_query = py_str_to_c_str(query)
         cdef str found_str_py = None
-        cdef size_t query_len = strlen(c_query)
+        cdef size_t query_len = simd_strlen(c_query)
         cdef CacheState * st = cache_new()
         cache_reserve(st, query_len)  # Pre-allocate some space
         cdef SearchResult res
@@ -654,7 +655,7 @@ cdef class cPrefixTrie:
         """
         cdef Str c_target = py_str_to_c_str(target_string)
         cdef str found_str_py = None
-        cdef size_t target_len = strlen(c_target)
+        cdef size_t target_len = simd_strlen(c_target)
         cdef SubstringSearchResult best_result
 
         # Check if the length of the target string makes it impossible to find a match
@@ -689,7 +690,7 @@ cdef class cPrefixTrie:
         """
         cdef Str c_target = py_str_to_c_str(target_string)
         cdef str found_str_py = None
-        cdef size_t target_len = strlen(c_target)
+        cdef size_t target_len = simd_strlen(c_target)
         cdef size_t min_match_len_c = <size_t> min_match_length
         if target_len < min_match_len_c:  # Only check if target is too short for min_match_length
             free(c_target)
@@ -716,7 +717,7 @@ cdef class cPrefixTrie:
         :return: The number of matching entries found.
         """
         cdef Str c_query = py_str_to_c_str(query)
-        cdef size_t query_len = strlen(c_query)
+        cdef size_t query_len = simd_strlen(c_query)
         cdef unordered_set[Str] found_entries
         cdef CountCacheState* st = count_cache_new()
 
