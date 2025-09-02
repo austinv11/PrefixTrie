@@ -20,36 +20,7 @@ A high-performance Cython implementation of a prefix trie data structure for eff
 
 ## Quick Start
 
-```python
-from prefixtrie import PrefixTrie
-
-# Create a trie with DNA sequences
-trie = PrefixTrie(["ACGT", "ACGG", "ACGC"], allow_indels=True)
-
-# Exact matching
-result, corrections = trie.search("ACGT")
-print(result, corrections)  # ("ACGT", 0)
-
-# Fuzzy matching with edit distance
-result, corrections = trie.search("ACGA", correction_budget=1)
-print(result, corrections)  # ("ACGT", 1) - one substitution
-
-result, corrections = trie.search("ACG", correction_budget=1)
-print(result, corrections)  # ("ACGT", 1) - one insertion needed
-
-result, corrections = trie.search("ACGTA", correction_budget=1)
-print(result, corrections)  # ("ACGT", 1) - one deletion needed
-
-# No match within budget
-result, corrections = trie.search("TTTT", correction_budget=1)
-print(result, corrections)  # (None, -1)
-```
-
-## Installation
-
-```bash
-pip install prefixtrie
-```
+Our [Getting Started Guide](getting-started.md) provides a step-by-step introduction to installing and using PrefixTrie.
 
 ## Documentation
 

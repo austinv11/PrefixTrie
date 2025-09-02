@@ -1,8 +1,8 @@
 name: Benchmarks
 
 on:
-  push:
-    branches: [ master, main ]
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
