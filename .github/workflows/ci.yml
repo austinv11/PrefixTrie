@@ -91,11 +91,11 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Install and Test on ARM64
-        uses: uraimo/run-on-arch-action@v2
+        uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
-          distro: ubuntu22.04
-          env:
+          distro: ubuntu24.04
+          env: |
             CXXFLAGS: -O3 -std=c++11
           run: |
             echo "Running on $(uname -m)"
