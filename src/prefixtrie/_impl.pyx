@@ -40,17 +40,22 @@ ctypedef struct Alphabet:
     int map[256]  # Assuming ASCII, max 256 characters
 
 cdef struct TrieNode:
-    int node_id
-    char value
-    Str collapsed
-    size_t collapsed_len
+    # Hot data pointers (first for better cache locality)
     TrieNode** children
-    vector[int]* children_idx
-    TrieNode* skip_to
-    TrieNode* parent
     Str leaf_value
-    size_t min_remaining  # Minimum remaining characters to match from this node
-    size_t max_remaining  # Maximum remaining characters to match from this node
+    TrieNode* skip_to
+    Str collapsed
+    vector[int]* children_idx
+
+    # Hot data for search - numeric values
+    size_t collapsed_len
+    size_t min_remaining
+    size_t max_remaining
+    int node_id
+
+    # Cold data
+    char value
+    TrieNode* parent
 
 cdef TrieNode* create_node(const int node_id, const char value, TrieNode* parent, const size_t alphabet_size):
     cdef TrieNode* node = <TrieNode*>malloc(sizeof(TrieNode))
