@@ -11,7 +11,7 @@ authors = [
 maintainers = [
     {name = "Austin Varela", email = "austinv11@gmail.com"},
 ]
-keywords = ["trie", "prefix-trie", "fuzzy-matching", "string-matching", "bioinformatics"]
+keywords = ["trie", "prefix-trie", "fuzzy-matching", "string-matching", "bioinformatics", "fuzzy-search"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -56,14 +56,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O3", "-std=c++11"], extra-link-args = ["-O3"]}]
-# Config for development mode with debugging symbols
-# Make sure to run:
-#export CFLAGS="-O0 -g"
-#export CXXFLAGS="-O0 -g"
-#export CYTHON_TRACE=1
-#export CYTHON_TRACE_NOGIL=1
-#ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-O0", "-g", "-std=c++11"], extra-link-args = ["-g"]}]
+ext-modules = [{name = "prefixtrie._impl", sources = ["src/prefixtrie/_impl.pyx"], language = "c++", extra-compile-args = ["-std=c++11"], extra-link-args = []}]
 include-package-data = true
 zip-safe = false
 

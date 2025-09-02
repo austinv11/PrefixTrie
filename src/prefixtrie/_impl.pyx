@@ -56,33 +56,57 @@ cdef struct TrieNode:
     # Cold data
     char value
     TrieNode* parent
+# -----------------------------
+# TrieNode Memory Pool
+# -----------------------------
+cdef size_t POOL_BLOCK_SIZE = 1024  # Allocate 1024 nodes at a time
 
-cdef TrieNode* create_node(const int node_id, const char value, TrieNode* parent, const size_t alphabet_size):
-    cdef TrieNode* node = <TrieNode*>malloc(sizeof(TrieNode))
-    if not node:
-        raise MemoryError("Failed to allocate memory for TrieNode")
-    node.node_id = node_id
-    node.value = value
-    node.collapsed = NULL
-    node.skip_to = NULL
-    node.children = <TrieNode**> malloc(alphabet_size * sizeof(TrieNode*))  # Allocate space for children pointers
-    if not node.children:
-        raise MemoryError("Failed to allocate memory for TrieNode children")
-    memset(node.children, 0, alphabet_size * sizeof(TrieNode*))  # Initialize to NULL
-    node.children_idx = new vector[int]()
-    deref(node.children_idx).reserve(4)
-    node.parent = parent
-    node.leaf_value = NULL
-    node.collapsed_len = 0
-    node.min_remaining = 0
-    node.max_remaining = 0
-    return node
+@cython.final
+@cython.no_gc
+cdef class TrieNodePool:
+    cdef vector[TrieNode*] blocks
+    cdef vector[TrieNode*] free_list
+    cdef size_t next_in_block
+
+    def __cinit__(self):
+        self.next_in_block = POOL_BLOCK_SIZE  # Start as exhausted to force first allocation
+
+    def __dealloc__(self):
+        cdef size_t i
+        for i in range(self.blocks.size()):
+            free(self.blocks[i])
+        self.blocks.clear()
+        self.free_list.clear()
+
+    cdef TrieNode* get_node(self) except NULL:
+        cdef TrieNode* node
+        cdef TrieNode* new_block
+        if not self.free_list.empty():
+            node = self.free_list.back()
+            self.free_list.pop_back()
+            return node
+
+        if self.next_in_block >= POOL_BLOCK_SIZE:
+            # Current block is exhausted, allocate a new one
+            new_block = <TrieNode*> malloc(POOL_BLOCK_SIZE * sizeof(TrieNode))
+            if not new_block:
+                raise MemoryError("Failed to allocate TrieNode block")
+            self.blocks.push_back(new_block)
+            self.next_in_block = 0
+
+        node = &self.blocks.back()[self.next_in_block]
+        self.next_in_block += 1
+        return node
+
+    cdef void return_node(self, TrieNode* node) noexcept:
+        # For now, this will only be used if we implement node pruning in mutable tries
+        self.free_list.push_back(node)
 
 cdef inline size_t n_children(const TrieNode* n) noexcept nogil:
     return deref(n.children_idx).size()
 
 cdef inline TrieNode* child_at(const TrieNode* n, const size_t i) noexcept nogil:
-    cdef int idx = <int>deref(n.children_idx)[i]
+    cdef int idx = <int> deref(n.children_idx)[i]
     return n.children[idx]
 
 cdef inline void append_child_at_index(TrieNode* p, TrieNode* c, int idx) noexcept nogil:
@@ -110,8 +134,8 @@ cdef struct SubstringSearchResult:
     bint found
     Str found_str
     int corrections
-    size_t start_pos    # Starting position in the target string
-    size_t end_pos      # Ending position in the target string
+    size_t start_pos  # Starting position in the target string
+    size_t end_pos  # Ending position in the target string
 
 cdef inline bint _is_better(const SearchResult* a, const SearchResult* b) noexcept nogil:
     if a.found != b.found:
@@ -136,30 +160,30 @@ cdef inline Key make_key(const int node_id, const size_t curr_idx, const bint al
         <unsigned long long> (allow_indels & 1))
 
 cdef struct CacheState:
-    unordered_map[Key, SearchResult]* data
+    unordered_map[Key, SearchResult] * data
 
-cdef inline CacheState* cache_new() nogil:
-    cdef CacheState* st = <CacheState*> malloc(sizeof(CacheState))
+cdef inline CacheState * cache_new() nogil:
+    cdef CacheState * st = <CacheState *> malloc(sizeof(CacheState))
     if st == NULL:
         with gil:
             raise MemoryError("Failed to allocate CacheState")
     st.data = new unordered_map[Key, SearchResult]()
     return st
 
-cdef inline void cache_reserve(CacheState* st, size_t query_len) noexcept nogil:
+cdef inline void cache_reserve(CacheState * st, size_t query_len) noexcept nogil:
     # Speed up allocations by pre-reserving a rough guesstimate on initial size
-    deref(st.data).reserve(<size_t>(8 * query_len))
+    deref(st.data).reserve(<size_t> (8 * query_len))
 
-cdef inline void cache_free(CacheState* st) noexcept nogil:
+cdef inline void cache_free(CacheState * st) noexcept nogil:
     if st != NULL:
         if st.data != NULL:
             del st.data  # delete C++ unordered_map
         free(st)
 
-cdef inline bint cache_contains(const CacheState* st, const Key key) noexcept nogil:
+cdef inline bint cache_contains(const CacheState * st, const Key key) noexcept nogil:
     return deref(st.data).find(key) != deref(st.data).end()
 
-cdef inline SearchResult cache_get(const CacheState* st, const Key key) noexcept nogil:
+cdef inline SearchResult cache_get(const CacheState * st, const Key key) noexcept nogil:
     cdef unordered_map[Key, SearchResult].iterator it
     cdef SearchResult out
     out.found = False
@@ -171,7 +195,7 @@ cdef inline SearchResult cache_get(const CacheState* st, const Key key) noexcept
     return out
 
 # Combine contains and get calls
-cdef inline bint cache_try_get(const CacheState* st, Key key, SearchResult* out) noexcept nogil:
+cdef inline bint cache_try_get(const CacheState * st, Key key, SearchResult* out) noexcept nogil:
     cdef unordered_map[Key, SearchResult].iterator it
     it = deref(st.data).find(key)
     if it != deref(st.data).end():
@@ -180,7 +204,7 @@ cdef inline bint cache_try_get(const CacheState* st, Key key, SearchResult* out)
     return False
 
 # Store if better, then return the best result
-cdef inline SearchResult cache_store_if_better(CacheState* st, Key key, SearchResult incoming) noexcept nogil:
+cdef inline SearchResult cache_store_if_better(CacheState * st, Key key, SearchResult incoming) noexcept nogil:
     cdef unordered_map[Key, SearchResult].iterator it
     cdef pair[Key, SearchResult] p
     it = deref(st.data).find(key)
@@ -195,7 +219,6 @@ cdef inline SearchResult cache_store_if_better(CacheState* st, Key key, SearchRe
             return incoming
         else:
             return deref(it).second
-
 
 cdef void _traverse(TrieNode* n, list entries):
     if n is NULL:
@@ -246,6 +269,7 @@ cdef class TrieIterator:
 @cython.final
 @cython.no_gc
 cdef class cPrefixTrie:
+    cdef TrieNodePool node_pool
     cdef TrieNode* root
     cdef int n_entries
     cdef bint allow_indels
@@ -255,7 +279,10 @@ cdef class cPrefixTrie:
     cdef size_t min_length
     cdef int last_node_id
 
-    def __init__(self, entries: list[str], allow_indels: bool=False, immutable: bool=True):
+    def __cinit__(self, *args, **kwargs):
+        self.node_pool = TrieNodePool()
+
+    def __init__(self, entries: list[str], allow_indels: bool = False, immutable: bool = True):
         # Initialize alphabet with full 256-character support for mutable tries
         # For immutable tries, we can still optimize by scanning only the entries
         cdef bint[256] seen
@@ -285,12 +312,12 @@ cdef class cPrefixTrie:
             for i in range(256):
                 self.alphabet.map[i] = i
 
-        self.root = create_node(0, '\0', NULL, <size_t> self.alphabet.size)
+        self.root = self._create_node(0, '\0', NULL, <size_t> self.alphabet.size)
         self.n_entries = 0
         self.allow_indels = allow_indels
         self.immutable = immutable
         self.max_length = 0
-        self.min_length = <size_t>-1  # Maximum possible size_t value
+        self.min_length = <size_t> -1  # Maximum possible size_t value
         self.last_node_id = 1
         cdef int last_id = 1
         for entry in entries:
@@ -315,14 +342,14 @@ cdef class cPrefixTrie:
         Get the minimum length of entries in the trie.
         :return: The minimum length of entries in the trie.
         """
-        return <int>self.min_length
+        return <int> self.min_length
 
     cpdef int get_max_length(self):
         """
         Get the maximum length of entries in the trie.
         :return: The maximum length of entries in the trie.
         """
-        return <int>self.max_length
+        return <int> self.max_length
 
     cpdef bint add(self, str entry):
         """
@@ -406,6 +433,27 @@ cdef class cPrefixTrie:
         """
         return self.immutable
 
+    cdef TrieNode* _create_node(self, const int node_id, const char value, TrieNode* parent,
+                                 const size_t alphabet_size):
+        cdef TrieNode* node = self.node_pool.get_node()
+        # The node from the pool might have old data, so we MUST initialize it.
+        node.node_id = node_id
+        node.value = value
+        node.collapsed = NULL
+        node.skip_to = NULL
+        node.children = <TrieNode**> malloc(alphabet_size * sizeof(TrieNode*))
+        if not node.children:
+            raise MemoryError("Failed to allocate memory for TrieNode children")
+        memset(node.children, 0, alphabet_size * sizeof(TrieNode*))
+        node.children_idx = new vector[int]()
+        deref(node.children_idx).reserve(4)
+        node.parent = parent
+        node.leaf_value = NULL
+        node.collapsed_len = 0
+        node.min_remaining = 0
+        node.max_remaining = 0
+        return node
+
     cdef int _insert(self, str entry, size_t last_id):
         cdef TrieNode* node = self.root
         cdef char ch
@@ -430,8 +478,8 @@ cdef class cPrefixTrie:
                 node = node.children[idx]
             else:
                 inserted_new = True
-                for k in range(n-1, i-1, -1):
-                    new_node = create_node(last_id, c_entry[k], NULL, <size_t> self.alphabet.size)
+                for k in range(n - 1, i - 1, -1):
+                    new_node = self._create_node(last_id, c_entry[k], NULL, <size_t> self.alphabet.size)
                     last_id += 1
                     if k == n - 1:
                         new_node.leaf_value = <Str> malloc(strlen(c_entry) + 1)
@@ -460,8 +508,13 @@ cdef class cPrefixTrie:
         if not node:
             return
 
+        # Prevent memory leak by freeing existing collapsed value before re-assigning
+        if node.collapsed:
+            free(node.collapsed)
+            node.collapsed = NULL
+
         if has_complete(node):
-            node.collapsed = <Str>malloc(2)
+            node.collapsed = <Str> malloc(2)
             if not node.collapsed:
                 raise MemoryError("Failed to allocate memory for collapsed value")
             node.collapsed[0] = node.value
@@ -475,14 +528,14 @@ cdef class cPrefixTrie:
             self._compile(child_at(node, 0))
             # Root (value == '\0') should not prefix its value
             if node.value == '\0':
-                node.collapsed = <Str>malloc(strlen(child_at(node, 0).collapsed) + 1)
+                node.collapsed = <Str> malloc(strlen(child_at(node, 0).collapsed) + 1)
                 if not node.collapsed:
                     raise MemoryError("Failed to allocate memory for collapsed value")
                 strcpy(node.collapsed, child_at(node, 0).collapsed)
                 node.collapsed_len = child_at(node, 0).collapsed_len
             else:
                 clen = child_at(node, 0).collapsed_len
-                node.collapsed = <Str>malloc(clen + 2)  # +1 for node.value, +1 for '\0'
+                node.collapsed = <Str> malloc(clen + 2)  # +1 for node.value, +1 for '\0'
                 if not node.collapsed:
                     raise MemoryError("Failed to allocate memory for collapsed value")
                 node.collapsed[0] = node.value
@@ -493,14 +546,13 @@ cdef class cPrefixTrie:
             for i in range(n_children(node)):
                 child = child_at(node, i)
                 self._compile(child)
-            node.collapsed = <Str>malloc(2)
+            node.collapsed = <Str> malloc(2)
             if not node.collapsed:
-               raise MemoryError("Failed to allocate memory for collapsed value")
+                raise MemoryError("Failed to allocate memory for collapsed value")
             node.collapsed[0] = node.value
             node.collapsed[1] = '\0'
             node.collapsed_len = 1
             node.skip_to = node
-
 
     cdef pair[size_t, size_t] _compute_length_bounds(self, TrieNode* node) noexcept nogil:
         cdef size_t m = n_children(node)
@@ -530,7 +582,6 @@ cdef class cPrefixTrie:
         child_bounds.second = node.max_remaining
         return child_bounds
 
-
     cpdef tuple[str, int] search(self, str query, int correction_budget=0):
         """
         Search for a query in the trie, allowing for a specified number of corrections.
@@ -542,7 +593,7 @@ cdef class cPrefixTrie:
         cdef Str c_query = py_str_to_c_str(query)
         cdef str found_str_py = None
         cdef size_t query_len = strlen(c_query)
-        cdef CacheState* st = cache_new()
+        cdef CacheState * st = cache_new()
         cache_reserve(st, query_len)  # Pre-allocate some space
         cdef SearchResult res
         with nogil:
@@ -592,10 +643,10 @@ cdef class cPrefixTrie:
         Note that this is an exact match search and does not require a complete match.
         However, if there is an incomplete match and it is ambiguous what the next character is,
         the search will return no match.
-        
+
         Example: Given a trie with "app" and "apple", searching "xyzappl" will return "apple" as the longest prefix match,
         searching "xyzapp" will return "app", but searching "xyzap" will return no match since it is ambiguous.
-        
+
         :param target_string: The string to search within.
         :param min_match_length: Minimum length of the match to be considered valid.
         :return: Tuple of (found_string, target_start_pos, match_len) or (None, -1, -1) if no match is found.
@@ -620,17 +671,16 @@ cdef class cPrefixTrie:
         else:
             return None, -1, -1
 
-
     cdef SearchResult _search(self,
-                               CacheState* st,
-                               TrieNode* node,
-                               Str query,
-                               size_t query_len,
-                               size_t curr_idx,
-                               int curr_corrections,
-                               int max_corrections,
-                               bint allow_indels,
-                               bint exact_only) noexcept nogil:
+                              CacheState * st,
+                              TrieNode* node,
+                              Str query,
+                              size_t query_len,
+                              size_t curr_idx,
+                              int curr_corrections,
+                              int max_corrections,
+                              bint allow_indels,
+                              bint exact_only) noexcept nogil:
         # If there is no more remaining corrections, we can get some speed ups by annotating exact_only as true
         exact_only = exact_only or (curr_corrections >= max_corrections)
 
@@ -674,10 +724,10 @@ cdef class cPrefixTrie:
             if allow_indels and curr_corrections < max_corrections:
                 # We can match here but need to add corrections for remaining query characters
                 remaining_chars = query_len - curr_idx
-                if curr_corrections + <int>remaining_chars <= max_corrections:
+                if curr_corrections + <int> remaining_chars <= max_corrections:
                     potential.found = True
                     potential.found_str = node.leaf_value
-                    potential.corrections = curr_corrections + <int>remaining_chars
+                    potential.corrections = curr_corrections + <int> remaining_chars
                     result = cache_store_if_better(st, node_key, potential)
 
         if is_at_query_end and (not allow_indels or curr_corrections >= max_corrections):
@@ -694,7 +744,7 @@ cdef class cPrefixTrie:
             len_diff = remaining_chars - node.max_remaining
         else:
             len_diff = 0
-        if curr_corrections + <int>len_diff > max_corrections:
+        if curr_corrections + <int> len_diff > max_corrections:
             return cache_store_if_better(st, node_key, result)
 
         # Collapsed exact skip
@@ -711,10 +761,12 @@ cdef class cPrefixTrie:
                     if curr_idx + skip_len == query_len or allow_indels:
                         potential = self._search(st, node.skip_to, query, query_len, curr_idx + skip_len,
                                                  curr_corrections, max_corrections, allow_indels, exact_only)
-                        if potential.found and (exact_only or potential.corrections <= curr_corrections or not allow_indels):
+                        if potential.found and (
+                                exact_only or potential.corrections <= curr_corrections or not allow_indels):
                             return potential
                         # Otherwise cache it and continue exploring
-                        cache_store_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels), potential)
+                        cache_store_if_better(st, make_key(node.skip_to.node_id, curr_idx + skip_len, allow_indels),
+                                              potential)
 
         # Exact character match (O(1) via alphabet index)
         if curr_idx < query_len:
@@ -726,7 +778,8 @@ cdef class cPrefixTrie:
                                              curr_corrections, max_corrections, allow_indels, exact_only)
                     if potential.found:
                         return potential
-                    cache_store_if_better(st, make_key(node.children[ai].node_id, curr_idx + 1, allow_indels), potential)
+                    cache_store_if_better(st, make_key(node.children[ai].node_id, curr_idx + 1, allow_indels),
+                                          potential)
 
         # No budget to correct
         if exact_only or curr_corrections >= max_corrections:
@@ -740,7 +793,7 @@ cdef class cPrefixTrie:
             best_result.found = False
             best_result.corrections = max_corrections + 1
             for i in range(m):
-                idx_child = <int>deref(node.children_idx)[i]
+                idx_child = <int> deref(node.children_idx)[i]
                 if idx_child == want:
                     continue
                 child_node = node.children[idx_child]
@@ -756,14 +809,13 @@ cdef class cPrefixTrie:
             if best_result.found:
                 return best_result
 
-
         # Try indels if allowed
         if allow_indels:
             # Insertion: advance in trie (consume trie character) while staying at same query position
             # This simulates inserting a character from the trie into the query
             m = n_children(node)
             for i in range(m):
-                idx_child = <int>deref(node.children_idx)[i]
+                idx_child = <int> deref(node.children_idx)[i]
                 potential = self._search(st, node.children[idx_child], query, query_len, curr_idx,
                                          curr_corrections + 1, max_corrections, True, exact_only)
                 if potential.found:
@@ -782,11 +834,12 @@ cdef class cPrefixTrie:
         # Store this node's best result and return
         return cache_store_if_better(st, node_key, result)
 
-    cdef SubstringSearchResult _search_substring_internal(self, Str c_target, size_t target_len, int correction_budget) noexcept nogil:
+    cdef SubstringSearchResult _search_substring_internal(self, Str c_target, size_t target_len,
+                                                          int correction_budget) noexcept nogil:
         cdef SubstringSearchResult best_result
         cdef SubstringSearchResult current_result
         cdef size_t start_pos
-        cdef CacheState* st
+        cdef CacheState * st
 
         best_result.found = False
         best_result.found_str = NULL
@@ -819,15 +872,15 @@ cdef class cPrefixTrie:
         return best_result
 
     cdef void _search_substring_recursive(self,
-                                      CacheState* st,
-                                      TrieNode* node,
-                                      Str target,
-                                      size_t target_len,
-                                      size_t start_pos,
-                                      size_t curr_idx,
-                                      int curr_corrections,
-                                      int max_corrections,
-                                      SubstringSearchResult* best_result_for_start) noexcept nogil:
+                                          CacheState * st,
+                                          TrieNode* node,
+                                          Str target,
+                                          size_t target_len,
+                                          size_t start_pos,
+                                          size_t curr_idx,
+                                          int curr_corrections,
+                                          int max_corrections,
+                                          SubstringSearchResult* best_result_for_start) noexcept nogil:
         cdef Key node_key
         cdef SearchResult prev
         cdef SubstringSearchResult potential_result
@@ -864,7 +917,8 @@ cdef class cPrefixTrie:
         query_char = target[curr_idx]
         ai = self.alphabet.map[<unsigned char> query_char]
         if ai >= 0 and node.children[ai] != NULL:
-            self._search_substring_recursive(st, node.children[ai], target, target_len, start_pos, curr_idx + 1, curr_corrections, max_corrections, best_result_for_start)
+            self._search_substring_recursive(st, node.children[ai], target, target_len, start_pos, curr_idx + 1,
+                                             curr_corrections, max_corrections, best_result_for_start)
         if curr_corrections >= max_corrections:
             res_to_cache.found = False
             res_to_cache.corrections = curr_corrections
@@ -875,28 +929,32 @@ cdef class cPrefixTrie:
         # Mismatch
         m = n_children(node)
         for i in range(m):
-            idx_child = <int>deref(node.children_idx)[i]
+            idx_child = <int> deref(node.children_idx)[i]
             if idx_child == ai:
                 continue
             child_node = node.children[idx_child]
-            self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx + 1, curr_corrections + 1, max_corrections, best_result_for_start)
+            self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx + 1,
+                                             curr_corrections + 1, max_corrections, best_result_for_start)
 
         # Indels
         if self.allow_indels:
             # Insertion
             for i in range(m):
                 child_node = child_at(node, i)
-                self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx, curr_corrections + 1, max_corrections, best_result_for_start)
+                self._search_substring_recursive(st, child_node, target, target_len, start_pos, curr_idx,
+                                                 curr_corrections + 1, max_corrections, best_result_for_start)
 
             # Deletion
-            self._search_substring_recursive(st, node, target, target_len, start_pos, curr_idx + 1, curr_corrections + 1, max_corrections, best_result_for_start)
+            self._search_substring_recursive(st, node, target, target_len, start_pos, curr_idx + 1,
+                                             curr_corrections + 1, max_corrections, best_result_for_start)
 
         res_to_cache.found = False
         res_to_cache.corrections = curr_corrections
         res_to_cache.found_str = NULL
         cache_store_if_better(st, node_key, res_to_cache)
 
-    cdef SubstringSearchResult _longest_prefix_search(self, Str target, size_t target_len, size_t min_match_len) noexcept nogil:
+    cdef SubstringSearchResult _longest_prefix_search(self, Str target, size_t target_len,
+                                                      size_t min_match_len) noexcept nogil:
         cdef SubstringSearchResult best_result
         cdef TrieNode* node
         cdef size_t start_pos = 0
@@ -940,7 +998,7 @@ cdef class cPrefixTrie:
                             free(best_result.found_str)
 
                         # Allocate and copy the matched substring
-                        matched_str = <Str>malloc(match_len + 1)
+                        matched_str = <Str> malloc(match_len + 1)
                         if matched_str == NULL:
                             # Memory allocation failed, return current best or nothing
                             break
@@ -975,4 +1033,5 @@ cdef class cPrefixTrie:
             free(node.collapsed)
         if node.leaf_value:
             free(node.leaf_value)
-        free(node)
+        # The TrieNode struct itself is not freed, as its memory is managed by the TrieNodePool.
+        # The pool will be deallocated when the cPrefixTrie object is deallocated.
