@@ -201,6 +201,38 @@ cdef void _traverse(TrieNode* n, list entries):
     if cn > 0:
         for i in range(cn):
             _traverse(child_at(n, i), entries)
+# -----------------------------
+# Trie Iterator
+# -----------------------------
+@cython.final
+@cython.no_gc
+cdef class TrieIterator:
+    cdef vector[TrieNode*] stack
+    cdef TrieNode* root
+
+    def __cinit__(self, cPrefixTrie trie):
+        self.root = trie.root
+        self.stack.push_back(self.root)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        cdef TrieNode* current
+        cdef size_t i
+        cdef int m
+        while not self.stack.empty():
+            current = self.stack.back()
+            self.stack.pop_back()
+
+            # Push children to the stack in reverse order to maintain sorted iteration
+            m = n_children(current)
+            for i in range(m):
+                self.stack.push_back(child_at(current, m - 1 - i))
+
+            if has_complete(current):
+                return c_str_to_py_str(current.leaf_value)
+        raise StopIteration()
 
 # -----------------------------
 # Trie object (only search() exposed to Python)
@@ -248,17 +280,8 @@ cdef class cPrefixTrie:
         self._compile(self.root)  # Compile the Trie
         self._compute_length_bounds(self.root)  # Compute min/max remaining lengths
 
-
-    cpdef object make_iter(self):
-        """
-        Create an iterator over the entries in the trie.
-        This is a placeholder for future implementation.
-        """
-        cdef TrieNode* node = self.root
-        cdef list entries = []
-        _traverse(node, entries)
-        return iter(entries)
-
+    def __iter__(self):
+        return TrieIterator(self)
 
     cpdef int n_values(self):
         """

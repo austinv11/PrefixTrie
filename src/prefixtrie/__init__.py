@@ -242,7 +242,7 @@ class PrefixTrie:
         Iterate over the items in the trie.
         :return: An iterator over the items in the trie.
         """
-        yield from self._trie.make_iter()
+        return self._trie.__iter__()
 
     def __len__(self):
         """
