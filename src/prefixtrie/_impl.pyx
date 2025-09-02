@@ -2,7 +2,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, infer_types=True, initializedcheck=False, nonecheck=False
 
 from libc.stdlib cimport malloc, free
-from libc.stddef cimport size_t
+# from libc.stddef cimport size_t
 from libc.string cimport strcpy, strlen, memcpy, strncmp, memset
 from libcpp.unordered_map cimport unordered_map
 from libcpp.utility cimport pair
@@ -243,40 +243,54 @@ cdef class cPrefixTrie:
     cdef TrieNode* root
     cdef int n_entries
     cdef bint allow_indels
+    cdef bint immutable
     cdef Alphabet alphabet
     cdef size_t max_length
     cdef size_t min_length
+    cdef int last_node_id
 
-    def __init__(self, entries: list[str], allow_indels: bool=False):
-        # Scan for alphabet to optimize lookups
+    def __init__(self, entries: list[str], allow_indels: bool=False, immutable: bool=True):
+        # Initialize alphabet with full 256-character support for mutable tries
+        # For immutable tries, we can still optimize by scanning only the entries
         cdef bint[256] seen
         cdef int i, j
         cdef Str c_entry
         cdef str entry
-        for i in range(256):
-            seen[i] = 0
-        for entry in entries:
-            c_entry = py_str_to_c_str(entry)
-            for j in range(<int> strlen(c_entry)):
-                seen[<unsigned char> c_entry[j]] = True
-            free(c_entry)
-        self.alphabet.size = 0
-        for i in range(256):
-            if seen[i]:
-                self.alphabet.map[i] = <int> self.alphabet.size
-                self.alphabet.size += 1
-            else:
-                self.alphabet.map[i] = -1
+
+        if immutable:
+            # For immutable tries, scan entries to optimize alphabet
+            for i in range(256):
+                seen[i] = 0
+            for entry in entries:
+                c_entry = py_str_to_c_str(entry)
+                for j in range(<int> strlen(c_entry)):
+                    seen[<unsigned char> c_entry[j]] = True
+                free(c_entry)
+            self.alphabet.size = 0
+            for i in range(256):
+                if seen[i]:
+                    self.alphabet.map[i] = <int> self.alphabet.size
+                    self.alphabet.size += 1
+                else:
+                    self.alphabet.map[i] = -1
+        else:
+            # For mutable tries, use full alphabet to allow adding any character
+            self.alphabet.size = 256
+            for i in range(256):
+                self.alphabet.map[i] = i
 
         self.root = create_node(0, '\0', NULL, <size_t> self.alphabet.size)
         self.n_entries = 0
         self.allow_indels = allow_indels
+        self.immutable = immutable
         self.max_length = 0
         self.min_length = <size_t>-1  # Maximum possible size_t value
+        self.last_node_id = 1
         cdef int last_id = 1
         for entry in entries:
             last_id = self._insert(entry, last_id)
             self.n_entries += 1
+        self.last_node_id = last_id  # Store the last used ID
         self._compile(self.root)  # Compile the Trie
         self._compute_length_bounds(self.root)  # Compute min/max remaining lengths
 
@@ -304,6 +318,87 @@ cdef class cPrefixTrie:
         """
         return self.max_length
 
+    cpdef bint add(self, str entry) noexcept:
+        """
+        Add a new entry to the trie (only if mutable).
+        :param entry: The string to add
+        :return: True if added successfully, False if already exists or trie is immutable
+        """
+        # Check if entry already exists
+        cdef tuple search_result = self.search(entry)
+        if search_result[0] is not None:
+            return False  # Already exists
+
+        # Add the entry
+        self.last_node_id = self._insert(entry, self.last_node_id)
+        self.n_entries += 1
+
+        # Recompile the trie to update collapsed paths and bounds
+        self._compile(self.root)
+        self._compute_length_bounds(self.root)
+
+        return True
+
+    cpdef bint remove(self, str entry) noexcept:
+        """
+        Remove an entry from the trie (only if mutable).
+        :param entry: The string to remove
+        :return: True if removed successfully, False if not found or trie is immutable
+        """
+        # Check if entry exists
+        cdef tuple search_result = self.search(entry)
+        if search_result[0] is None:
+            return False  # Not found
+
+        # Remove the entry by clearing its leaf value
+        cdef bint removed = self._remove_entry(entry)
+        if removed:
+            self.n_entries -= 1
+            # Recompile the trie to update collapsed paths and bounds
+            self._compile(self.root)
+            self._compute_length_bounds(self.root)
+
+        return removed
+
+    cdef bint _remove_entry(self, str entry):
+        """
+        Internal method to remove an entry from the trie.
+        :param entry: The string to remove
+        :return: True if removed successfully
+        """
+        cdef TrieNode* node = self.root
+        cdef char ch
+        cdef Str c_entry = py_str_to_c_str(entry)
+        cdef size_t i, n = strlen(c_entry)
+        cdef int idx
+
+        try:
+            # Navigate to the node containing the entry
+            for i in range(n):
+                ch = c_entry[i]
+                idx = self.alphabet.map[<unsigned char> ch]
+                if idx < 0 or node.children[idx] == NULL:
+                    return False  # Path doesn't exist
+                node = node.children[idx]
+
+            # Check if this node has the leaf value we want to remove
+            if node.leaf_value == NULL:
+                return False  # No leaf value at this node
+
+            # Clear the leaf value
+            free(node.leaf_value)
+            node.leaf_value = NULL
+
+            return True
+        finally:
+            free(c_entry)
+
+    cpdef bint is_immutable(self):
+        """
+        Check if the trie is immutable.
+        :return: True if immutable, False if mutable
+        """
+        return self.immutable
 
     cdef int _insert(self, str entry, size_t last_id):
         cdef TrieNode* node = self.root
@@ -754,8 +849,10 @@ cdef class cPrefixTrie:
         if curr_idx >= target_len:
             return
 
+        # Only return early if we found an exact match that's already the maximum possible length
         if best_result_for_start.found and best_result_for_start.corrections == 0:
-            return
+            if (best_result_for_start.end_pos - best_result_for_start.start_pos) >= self.max_length:
+                return
 
         # Exact match
         query_char = target[curr_idx]

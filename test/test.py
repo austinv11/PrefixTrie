@@ -1633,3 +1633,450 @@ class TestPrefixTrieLongestPrefixMatch:
             search_result, corrections = trie.search(result)
             assert search_result == result
             assert corrections == 0
+
+
+class TestPrefixTrieMutability:
+    """Test mutability features of PrefixTrie"""
+
+    def test_immutable_by_default(self):
+        """Test that tries are immutable by default (backward compatibility)"""
+        trie = PrefixTrie(["hello", "world"])
+        assert trie.is_immutable() == True
+
+        # Should not be able to modify
+        with pytest.raises(RuntimeError):
+            trie.add("test")
+
+        with pytest.raises(RuntimeError):
+            trie.remove("hello")
+
+    def test_explicit_immutable_creation(self):
+        """Test creating explicitly immutable tries"""
+        trie = PrefixTrie(["hello", "world"], immutable=True)
+        assert trie.is_immutable() == True
+
+        with pytest.raises(RuntimeError):
+            trie.add("test")
+
+        with pytest.raises(RuntimeError):
+            trie.remove("hello")
+
+    def test_mutable_creation(self):
+        """Test creating mutable tries"""
+        trie = PrefixTrie(["hello", "world"], immutable=False)
+        assert trie.is_immutable() == False
+
+        # Should be able to modify
+        assert trie.add("test") == True
+        assert "test" in trie
+        assert len(trie) == 3
+
+        assert trie.remove("world") == True
+        assert "world" not in trie
+        assert len(trie) == 2
+
+    def test_add_functionality(self):
+        """Test adding entries to mutable tries"""
+        trie = PrefixTrie(["hello"], immutable=False)
+
+        # Add new entry
+        assert trie.add("world") == True
+        assert "world" in trie
+        assert len(trie) == 2
+
+        # Add duplicate entry
+        assert trie.add("hello") == False
+        assert len(trie) == 2
+
+        # Add multiple entries
+        assert trie.add("test") == True
+        assert trie.add("python") == True
+        assert len(trie) == 4
+
+        # Verify all entries work correctly
+        for entry in ["hello", "world", "test", "python"]:
+            result, corrections = trie.search(entry)
+            assert result == entry
+            assert corrections == 0
+
+    def test_remove_functionality(self):
+        """Test removing entries from mutable tries"""
+        entries = ["hello", "world", "test", "python"]
+        trie = PrefixTrie(entries, immutable=False)
+
+        # Remove existing entry
+        assert trie.remove("test") == True
+        assert "test" not in trie
+        assert len(trie) == 3
+
+        # Remove non-existent entry
+        assert trie.remove("nonexistent") == False
+        assert len(trie) == 3
+
+        # Remove all entries one by one
+        assert trie.remove("hello") == True
+        assert trie.remove("world") == True
+        assert trie.remove("python") == True
+        assert len(trie) == 0
+
+        # Try to remove from empty trie
+        assert trie.remove("anything") == False
+
+    def test_add_remove_with_fuzzy_search(self):
+        """Test that fuzzy search works correctly after add/remove operations"""
+        trie = PrefixTrie(["hello"], allow_indels=True, immutable=False)
+
+        # Add entries that are similar
+        trie.add("help")
+        trie.add("helicopter")
+
+        # Test fuzzy search finds correct matches
+        result, corrections = trie.search("helo", correction_budget=1)
+        assert result in ["hello", "help"]
+        assert corrections == 1
+
+        # Remove an entry and verify fuzzy search still works
+        trie.remove("help")
+        result, corrections = trie.search("helo", correction_budget=1)
+        assert result == "hello"
+        assert corrections == 1
+
+    def test_iteration_after_modifications(self):
+        """Test that iteration works correctly after modifications"""
+        initial_entries = ["a", "b", "c"]
+        trie = PrefixTrie(initial_entries, immutable=False)
+
+        # Verify initial iteration
+        assert set(trie) == set(initial_entries)
+
+        # Add entries and verify iteration
+        trie.add("d")
+        trie.add("e")
+        assert set(trie) == {"a", "b", "c", "d", "e"}
+
+        # Remove entries and verify iteration
+        trie.remove("b")
+        trie.remove("d")
+        assert set(trie) == {"a", "c", "e"}
+
+    def test_contains_after_modifications(self):
+        """Test that __contains__ works correctly after modifications"""
+        trie = PrefixTrie(["hello", "world"], immutable=False)
+
+        # Initial state
+        assert "hello" in trie
+        assert "world" in trie
+        assert "test" not in trie
+
+        # After adding
+        trie.add("test")
+        assert "test" in trie
+
+        # After removing
+        trie.remove("world")
+        assert "world" not in trie
+        assert "hello" in trie
+        assert "test" in trie
+
+    def test_len_after_modifications(self):
+        """Test that len() works correctly after modifications"""
+        trie = PrefixTrie(["a", "b"], immutable=False)
+        assert len(trie) == 2
+
+        # After adding
+        trie.add("c")
+        assert len(trie) == 3
+
+        trie.add("d")
+        trie.add("e")
+        assert len(trie) == 5
+
+        # After removing
+        trie.remove("a")
+        assert len(trie) == 4
+
+        trie.remove("c")
+        trie.remove("e")
+        assert len(trie) == 2
+
+    def test_getitem_after_modifications(self):
+        """Test that __getitem__ works correctly after modifications"""
+        trie = PrefixTrie(["hello"], immutable=False)
+
+        # Initial state
+        assert trie["hello"] == "hello"
+
+        # After adding
+        trie.add("world")
+        assert trie["world"] == "world"
+
+        # After removing
+        trie.remove("hello")
+        with pytest.raises(KeyError):
+            trie["hello"]
+        assert trie["world"] == "world"
+
+    def test_shared_memory_immutable_restriction(self):
+        """Test that shared memory requires immutable tries"""
+        # Mutable trie should not be able to create shared memory
+        mutable_trie = PrefixTrie(["hello", "world"], immutable=False)
+        with pytest.raises(RuntimeError, match="Cannot create shared memory for mutable trie"):
+            mutable_trie.create_shared_memory()
+
+        # Immutable trie should be able to create shared memory
+        immutable_trie = PrefixTrie(["hello", "world"], immutable=True)
+        try:
+            shm_name = immutable_trie.create_shared_memory()
+            assert shm_name is not None
+        finally:
+            immutable_trie.cleanup_shared_memory()
+
+    def test_pickle_with_mutability(self):
+        """Test that pickling works with both mutable and immutable tries"""
+        import pickle
+
+        # Test mutable trie
+        mutable_trie = PrefixTrie(["hello", "world"], immutable=False)
+        mutable_trie.add("test")
+
+        pickled_data = pickle.dumps(mutable_trie)
+        restored_mutable = pickle.loads(pickled_data)
+
+        assert restored_mutable.is_immutable() == False
+        assert len(restored_mutable) == 3
+        assert "test" in restored_mutable
+
+        # Test immutable trie
+        immutable_trie = PrefixTrie(["hello", "world"], immutable=True)
+
+        pickled_data = pickle.dumps(immutable_trie)
+        restored_immutable = pickle.loads(pickled_data)
+
+        assert restored_immutable.is_immutable() == True
+        assert len(restored_immutable) == 2
+
+    def test_complex_modification_sequence(self):
+        """Test complex sequence of modifications"""
+        trie = PrefixTrie([], immutable=False)
+        assert len(trie) == 0
+
+        # Build up trie
+        words = ["apple", "application", "apply", "banana", "band", "bandana"]
+        for word in words:
+            assert trie.add(word) == True
+            assert word in trie
+
+        assert len(trie) == len(words)
+
+        # Test search functionality
+        for word in words:
+            result, corrections = trie.search(word)
+            assert result == word
+            assert corrections == 0
+
+        # Remove some words
+        to_remove = ["apple", "band"]
+        for word in to_remove:
+            assert trie.remove(word) == True
+            assert word not in trie
+
+        remaining = [w for w in words if w not in to_remove]
+        assert len(trie) == len(remaining)
+
+        # Add back one word
+        assert trie.add("grape") == True
+        assert "grape" in trie
+        assert len(trie) == len(remaining) + 1
+
+        # Verify final state
+        expected_final = remaining + ["grape"]
+        assert set(trie) == set(expected_final)
+
+    def test_add_remove_edge_cases(self):
+        """Test edge cases for add and remove operations"""
+        trie = PrefixTrie([], immutable=False)
+
+        # Add to empty trie
+        assert trie.add("first") == True
+        assert len(trie) == 1
+
+        # Remove only entry
+        assert trie.remove("first") == True
+        assert len(trie) == 0
+
+        # Add empty string (if supported)
+        try:
+            result = trie.add("")
+            if result:
+                assert "" in trie
+                assert trie.remove("") == True
+        except (ValueError, RuntimeError):
+            # Empty strings might not be supported
+            pass
+
+        # Add single character
+        assert trie.add("a") == True
+        assert "a" in trie
+
+        # Add very long string
+        long_string = "a" * 1000
+        assert trie.add(long_string) == True
+        assert long_string in trie
+
+    def test_modification_with_special_characters(self):
+        """Test modifications with special characters"""
+        trie = PrefixTrie([], immutable=False)
+
+        special_strings = [
+            "hello!",
+            "@test",
+            "a-b-c",
+            "x_y_z",
+            "123",
+            "mix3d_Ch4r5!",
+        ]
+
+        # Add all special strings
+        for s in special_strings:
+            assert trie.add(s) == True
+            assert s in trie
+
+        # Verify search works
+        for s in special_strings:
+            result, corrections = trie.search(s)
+            assert result == s
+            assert corrections == 0
+
+        # Remove all special strings
+        for s in special_strings:
+            assert trie.remove(s) == True
+            assert s not in trie
+
+    def test_performance_large_modifications(self):
+        """Test performance with large number of modifications"""
+        trie = PrefixTrie([], immutable=False)
+
+        # Add many entries
+        entries = [f"entry_{i:04d}" for i in range(1000)]
+        for entry in entries:
+            assert trie.add(entry) == True
+
+        assert len(trie) == 1000
+
+        # Remove half the entries
+        to_remove = entries[::2]  # Every other entry
+        for entry in to_remove:
+            assert trie.remove(entry) == True
+
+        assert len(trie) == 500
+
+        # Verify remaining entries still work
+        remaining = entries[1::2]  # The other half
+        for entry in remaining:
+            assert entry in trie
+            result, corrections = trie.search(entry)
+            assert result == entry
+            assert corrections == 0
+
+    def test_modification_preserves_functionality(self):
+        """Test that modifications preserve all trie functionality"""
+        trie = PrefixTrie(["test", "testing"], allow_indels=True, immutable=False)
+
+        # Add entries with common prefixes
+        trie.add("tester")
+        trie.add("tea")
+        trie.add("team")
+
+        # Test exact search
+        for word in ["test", "testing", "tester", "tea", "team"]:
+            result, corrections = trie.search(word)
+            assert result == word
+            assert corrections == 0
+
+        # Test fuzzy search
+        result, corrections = trie.search("testin", correction_budget=1)
+        assert result == "testing"
+        assert corrections == 1
+
+        # Test substring search
+        result, corrections, start, end = trie.search_substring("xxxtestingxxx", correction_budget=0)
+        assert result == "testing"
+        assert corrections == 0
+
+        # Test longest prefix match
+        result, start, length = trie.longest_prefix_match("testingabc", min_match_length=4)
+        assert result == "testing"
+        assert start == 0
+        assert length == 7
+
+        # Remove an entry and verify functionality still works
+        trie.remove("tea")
+
+        # Previous searches should still work (except for removed entry)
+        result, corrections = trie.search("testing")
+        assert result == "testing"
+        assert corrections == 0
+
+        result, corrections = trie.search("tea")
+        assert result is None
+        assert corrections == -1
+
+    def test_error_conditions(self):
+        """Test various error conditions with mutable tries"""
+        # Test add on immutable trie
+        immutable_trie = PrefixTrie(["hello"], immutable=True)
+        with pytest.raises(RuntimeError, match="Cannot modify immutable trie"):
+            immutable_trie.add("world")
+
+        # Test remove on immutable trie
+        with pytest.raises(RuntimeError, match="Cannot modify immutable trie"):
+            immutable_trie.remove("hello")
+
+        # Test with mutable trie
+        mutable_trie = PrefixTrie(["hello"], immutable=False)
+
+        # These should work without errors
+        assert mutable_trie.add("world") == True
+        assert mutable_trie.remove("hello") == True
+
+
+class TestPrefixTrieSharedMemoryMutability:
+    """Test shared memory restrictions with mutability"""
+
+    def test_create_shared_trie_always_immutable(self):
+        """Test that create_shared_trie always creates immutable tries"""
+        from prefixtrie import create_shared_trie
+
+        trie, shm_name = create_shared_trie(["hello", "world"], allow_indels=True)
+
+        try:
+            assert trie.is_immutable() == True
+
+            # Should not be able to modify
+            with pytest.raises(RuntimeError):
+                trie.add("test")
+
+            with pytest.raises(RuntimeError):
+                trie.remove("hello")
+        finally:
+            trie.cleanup_shared_memory()
+
+    def test_load_shared_trie_immutable(self):
+        """Test that loaded shared tries are immutable"""
+        from prefixtrie import create_shared_trie, load_shared_trie
+
+        original_trie, shm_name = create_shared_trie(["hello", "world"])
+
+        try:
+            loaded_trie = load_shared_trie(shm_name)
+            assert loaded_trie.is_immutable() == True
+
+            # Should not be able to modify loaded trie
+            with pytest.raises(RuntimeError):
+                loaded_trie.add("test")
+
+            with pytest.raises(RuntimeError):
+                loaded_trie.remove("hello")
+        finally:
+            original_trie.cleanup_shared_memory()
+
