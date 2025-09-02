@@ -99,8 +99,8 @@ jobs:
             CXXFLAGS: -O3 -std=c++11
           run: |
             echo "Running on $(uname -m)"
-            python -m pip install --upgrade pip
-            # Install project with dev dependencies
+            apt-get update
+            apt-get install -y python3 python3-pip
+            python3 -m pip install --upgrade pip
             pip install -e .[dev]
-            # Run the test suite
             pytest
