@@ -207,6 +207,23 @@ class PrefixTrie:
         """
         return self._trie.search_substring(target_string, correction_budget)
 
+    def longest_prefix_match(self, target: str, min_match_length: int) -> tuple[str | None, int, int]:
+        """
+        Find the longest prefix match in the trie for the given target string.
+
+        :param target: The target string to find the longest prefix match for.
+        :param min_match_length: Minimum length of the match to be considered valid.
+        :return: A tuple containing the longest matching prefix, the target start index, and the match length.
+                 If no valid match is found, returns (None, -1, -1).
+        Example:
+            >>> trie = PrefixTrie(["ACGT", "ACGTA", "ACGTAG"], allow_indels=False)
+            >>> result = trie.longest_prefix_match("ACGTAGGT", min_match_length=4)
+            >>> # Returns: ("ACGTAG", 0, 6)
+            >>> result = trie.longest_prefix_match("ACGTTT", min_match_length=5)
+            >>> # Returns: (None, -1, -1) - no match of at least length 5
+        """
+        return self._trie.longest_prefix_match(target, min_match_length)
+
     def __contains__(self, item: str) -> bool:
         """
         Check if the trie contains the given item.

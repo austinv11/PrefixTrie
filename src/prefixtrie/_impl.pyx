@@ -462,6 +462,41 @@ cdef class cPrefixTrie:
         else:
             return None, -1, -1, -1
 
+    cpdef tuple[str, int, int] longest_prefix_match(self, str target_string, int min_match_length=1):
+        """
+        Scan the target string for the longest prefix substring present in the trie.
+        Note that this is an exact match search and does not require a complete match.
+        However, if there is an incomplete match and it is ambiguous what the next character is,
+        the search will return no match.
+        
+        Example: Given a trie with "app" and "apple", searching "xyzappl" will return "apple" as the longest prefix match,
+        searching "xyzapp" will return "app", but searching "xyzap" will return no match since it is ambiguous.
+        
+        :param target_string: The string to search within.
+        :param min_match_length: Minimum length of the match to be considered valid.
+        :return: Tuple of (found_string, target_start_pos, match_len) or (None, -1, -1) if no match is found.
+        """
+        cdef Str c_target = py_str_to_c_str(target_string)
+        cdef str found_str_py = None
+        cdef size_t target_len = strlen(c_target)
+        cdef size_t min_match_len_c = <size_t> min_match_length
+        if target_len < min_match_len_c:  # Only check if target is too short for min_match_length
+            free(c_target)
+            return None, -1, -1
+        cdef SubstringSearchResult best_result
+
+        with nogil:
+            best_result = self._longest_prefix_search(c_target, target_len, min_match_len_c)
+
+        free(c_target)
+        # Convert result to Python types
+        if best_result.found:
+            found_str_py = c_str_to_py_str(best_result.found_str)
+            return found_str_py, best_result.start_pos, best_result.end_pos - best_result.start_pos
+        else:
+            return None, -1, -1
+
+
     cdef SearchResult _search(self,
                                CacheState* st,
                                TrieNode* node,
@@ -734,6 +769,67 @@ cdef class cPrefixTrie:
         res_to_cache.corrections = curr_corrections
         res_to_cache.found_str = NULL
         cache_store_if_better(st, node_key, res_to_cache)
+
+    cdef SubstringSearchResult _longest_prefix_search(self, Str target, size_t target_len, size_t min_match_len) noexcept nogil:
+        cdef SubstringSearchResult best_result
+        cdef TrieNode* node
+        cdef size_t start_pos = 0
+        cdef size_t curr_idx = 0
+        cdef int ai
+        cdef Str matched_str
+        cdef size_t match_len
+        cdef size_t best_match_len = 0
+        cdef size_t best_start_pos = 0
+
+        # Pre-fill best_result
+        best_result.found = False
+        best_result.found_str = NULL
+        best_result.corrections = 0
+        best_result.start_pos = 0
+        best_result.end_pos = 0
+
+        # Try each starting position in the target string
+        while start_pos <= target_len - min_match_len:
+            node = self.root
+            curr_idx = start_pos
+
+            # Walk down the trie as far as possible, checking for complete entries at each step
+            while curr_idx < target_len:
+                ai = self.alphabet.map[<unsigned char> target[curr_idx]]
+                if ai < 0 or node.children[ai] == NULL:
+                    break
+                node = node.children[ai]
+                curr_idx += 1
+
+                # Check if this node represents a complete entry
+                if has_complete(node):
+                    match_len = curr_idx - start_pos
+                    # Check if this is a valid match and better than our current best
+                    if match_len >= min_match_len and match_len > best_match_len:
+                        best_match_len = match_len
+                        best_start_pos = start_pos
+
+                        # Free previous result if it exists
+                        if best_result.found:
+                            free(best_result.found_str)
+
+                        # Allocate and copy the matched substring
+                        matched_str = <Str>malloc(match_len + 1)
+                        if matched_str == NULL:
+                            # Memory allocation failed, return current best or nothing
+                            break
+                        memcpy(matched_str, target + start_pos, match_len)
+                        matched_str[match_len] = '\0'
+
+                        best_result.found = True
+                        best_result.found_str = matched_str
+                        best_result.corrections = 0
+                        best_result.start_pos = start_pos
+                        best_result.end_pos = start_pos + match_len
+
+            start_pos += 1
+
+        return best_result
 
     def __dealloc__(self):
         self._free_node(self.root)

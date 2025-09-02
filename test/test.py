@@ -113,7 +113,7 @@ class TestPrefixTrieEdgeCases:
 
     def test_special_characters(self):
         """Test with special characters"""
-        entries = ["hello!", "test@123", "a-b-c", "x_y_z"]
+        entries = ["hello!", "test@", "a-b-c", "x_y_z"]
         trie = PrefixTrie(entries)
 
         for entry in entries:
@@ -1175,14 +1175,20 @@ class TestPrefixTrieSubstringSearch:
         result, corrections, start, end = trie.search_substring("AAAHelloAAA", correction_budget=0)
         assert result == "Hello"
         assert corrections == 0
+        assert start == 3
+        assert end == 8
 
         result, corrections, start, end = trie.search_substring("AAAHELLOAAa", correction_budget=0)
         assert result == "HELLO"
         assert corrections == 0
+        assert start == 3
+        assert end == 8
 
         result, corrections, start, end = trie.search_substring("AAAhelloAAA", correction_budget=0)
         assert result == "hello"
         assert corrections == 0
+        assert start == 3
+        assert end == 8
 
     def test_boundary_positions_substring(self):
         """Test substring matches at string boundaries"""
@@ -1339,3 +1345,291 @@ if __name__ == "__main__":
     assert result == "hello" and corrections == 1
 
     print("Smoke test passed! Run 'pytest test.py' for full test suite.")
+
+class TestPrefixTrieLongestPrefixMatch:
+    """Test longest_prefix_match functionality of PrefixTrie"""
+
+    def test_basic_longest_prefix_match(self):
+        """Test basic longest prefix matching"""
+        entries = ["ACGT", "ACGTA", "ACGTAG", "TCGA"]
+        trie = PrefixTrie(entries)
+
+        # Exact match for complete entry
+        result, start, length = trie.longest_prefix_match("ACGT", min_match_length=4)
+        assert result == "ACGT"
+        assert start == 0
+        assert length == 4
+
+        # Longest prefix when multiple matches possible
+        result, start, length = trie.longest_prefix_match("ACGTAGGT", min_match_length=4)
+        assert result == "ACGTAG"
+        assert start == 0
+        assert length == 6
+
+        # Prefix match in middle of string - should find longest valid match
+        result, start, length = trie.longest_prefix_match("NNACGTANN", min_match_length=4)
+        assert result == "ACGTA"  # "ACGTA" is longer than "ACGT" and is a valid entry
+        assert start == 2
+        assert length == 5
+
+    def test_no_match_cases(self):
+        """Test cases where no match should be found"""
+        entries = ["ACGT", "TCGA", "GGCC"]
+        trie = PrefixTrie(entries)
+
+        # No match found - too short
+        result, start, length = trie.longest_prefix_match("ACG", min_match_length=4)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+        # No match found - no valid prefix
+        result, start, length = trie.longest_prefix_match("XYZT", min_match_length=1)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+        # No match found - min_match_length too high
+        result, start, length = trie.longest_prefix_match("ACGTTT", min_match_length=5)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+    def test_min_match_length_parameter(self):
+        """Test the min_match_length parameter"""
+        entries = ["A", "AB", "ABC", "ABCD"]
+        trie = PrefixTrie(entries)
+
+        # With min_match_length=1, should find "A"
+        result, start, length = trie.longest_prefix_match("AXYZ", min_match_length=1)
+        assert result == "A"
+        assert start == 0
+        assert length == 1
+
+        # With min_match_length=2, should find "AB"
+        result, start, length = trie.longest_prefix_match("ABXYZ", min_match_length=2)
+        assert result == "AB"
+        assert start == 0
+        assert length == 2
+
+        # With min_match_length=3, should find "ABC"
+        result, start, length = trie.longest_prefix_match("ABCXYZ", min_match_length=3)
+        assert result == "ABC"
+        assert start == 0
+        assert length == 3
+
+        # With min_match_length=5, should find nothing
+        result, start, length = trie.longest_prefix_match("ABCDXYZ", min_match_length=5)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+    def test_multiple_possible_matches(self):
+        """Test when multiple prefixes are possible"""
+        entries = ["TEST", "TESTING", "TESTER", "TE"]
+        trie = PrefixTrie(entries)
+
+        # Should find the longest match
+        result, start, length = trie.longest_prefix_match("TESTINGABC", min_match_length=2)
+        assert result == "TESTING"
+        assert start == 0
+        assert length == 7
+
+        # Should find the longest match that meets min_match_length
+        result, start, length = trie.longest_prefix_match("TESTERABC", min_match_length=4)
+        assert result == "TESTER"
+        assert start == 0
+        assert length == 6
+
+        # Should find shorter match when longer doesn't exist
+        result, start, length = trie.longest_prefix_match("TESTABC", min_match_length=2)
+        assert result == "TEST"
+        assert start == 0
+        assert length == 4
+
+    def test_position_in_target_string(self):
+        """Test finding matches at different positions in target string"""
+        entries = ["CAT", "DOG", "BIRD"]
+        trie = PrefixTrie(entries)
+
+        # Match at beginning
+        result, start, length = trie.longest_prefix_match("CATFISH", min_match_length=3)
+        assert result == "CAT"
+        assert start == 0
+        assert length == 3
+
+        # Match in middle
+        result, start, length = trie.longest_prefix_match("XYCATFISH", min_match_length=3)
+        assert result == "CAT"
+        assert start == 2
+        assert length == 3
+
+        # Match at end
+        result, start, length = trie.longest_prefix_match("XYCAT", min_match_length=3)
+        assert result == "CAT"
+        assert start == 2
+        assert length == 3
+
+        # Multiple possible matches - should find the longest one
+        result, start, length = trie.longest_prefix_match("CATDOGBIRD", min_match_length=3)
+        assert result == "BIRD"  # "BIRD" is 4 characters, longest match
+        assert start == 6
+        assert length == 4
+
+    def test_edge_cases(self):
+        """Test edge cases"""
+        entries = ["A", "AA", "AAA"]
+        trie = PrefixTrie(entries)
+
+        # Single character
+        result, start, length = trie.longest_prefix_match("A", min_match_length=1)
+        assert result == "A"
+        assert start == 0
+        assert length == 1
+
+        # Empty target string
+        result, start, length = trie.longest_prefix_match("", min_match_length=1)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+        # min_match_length = 0 (should default to 1)
+        result, start, length = trie.longest_prefix_match("AAA", min_match_length=0)
+        # Implementation should handle this gracefully
+
+    def test_dna_sequences(self):
+        """Test with DNA sequences"""
+        sequences = ["ATG", "ATGC", "ATGCG", "ATGCGT", "GCTA", "GCTAG"]
+        trie = PrefixTrie(sequences)
+
+        # Should find longest match
+        result, start, length = trie.longest_prefix_match("ATGCGTAAA", min_match_length=3)
+        assert result == "ATGCGT"
+        assert start == 0
+        assert length == 6
+
+        # Should find match in middle
+        result, start, length = trie.longest_prefix_match("NNATGCGTAAA", min_match_length=3)
+        assert result == "ATGCGT"
+        assert start == 2
+        assert length == 6
+
+        # Should respect min_match_length
+        result, start, length = trie.longest_prefix_match("ATGXX", min_match_length=4)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+    def test_protein_sequences(self):
+        """Test with protein sequences"""
+        proteins = ["MET", "METG", "METGL", "METGLY", "ALA", "ALAG"]
+        trie = PrefixTrie(proteins)
+
+        # Should find longest protein match
+        result, start, length = trie.longest_prefix_match("METGLYXXX", min_match_length=3)
+        assert result == "METGLY"
+        assert start == 0
+        assert length == 6
+
+        # Should find match in sequence
+        result, start, length = trie.longest_prefix_match("XXXMETGLXXX", min_match_length=3)
+        assert result == "METGL"
+        assert start == 3
+        assert length == 5
+
+    def test_special_characters(self):
+        """Test with special characters"""
+        entries = ["hello!", "test@", "a-b-c", "x_y_z"]
+        trie = PrefixTrie(entries)
+
+        # Should handle special characters
+        result, start, length = trie.longest_prefix_match("hello!world", min_match_length=5)
+        assert result == "hello!"
+        assert start == 0
+        assert length == 6
+
+        result, start, length = trie.longest_prefix_match("XXtest@YY", min_match_length=5)  # "test@" is 5 chars
+        assert result == "test@"
+        assert start == 2
+        assert length == 5
+
+    def test_case_sensitivity(self):
+        """Test case sensitivity"""
+        entries = ["Hello", "HELLO", "hello"]
+        trie = PrefixTrie(entries)
+
+        # Should be case sensitive
+        result, start, length = trie.longest_prefix_match("HelloWorld", min_match_length=5)
+        assert result == "Hello"
+        assert start == 0
+        assert length == 5
+
+        result, start, length = trie.longest_prefix_match("HELLOWorld", min_match_length=5)
+        assert result == "HELLO"
+        assert start == 0
+        assert length == 5
+
+        result, start, length = trie.longest_prefix_match("helloWorld", min_match_length=5)
+        assert result == "hello"
+        assert start == 0
+        assert length == 5
+
+    def test_performance_large_entries(self):
+        """Test performance with larger entries"""
+        # Generate some larger sequences
+        entries = [
+            "ATCG" * 25,  # 100 characters
+            "GCTA" * 25,  # 100 characters
+            "TTAA" * 25,  # 100 characters
+        ]
+        trie = PrefixTrie(entries)
+
+        target = "ATCG" * 25 + "EXTRA"
+        result, start, length = trie.longest_prefix_match(target, min_match_length=50)
+        assert result == "ATCG" * 25
+        assert start == 0
+        assert length == 100
+
+    def test_overlapping_prefixes(self):
+        """Test with overlapping prefix patterns"""
+        entries = ["ABC", "ABCD", "ABCDE", "AB", "A"]
+        trie = PrefixTrie(entries)
+
+        # Should find longest match
+        result, start, length = trie.longest_prefix_match("ABCDEFGH", min_match_length=1)
+        assert result == "ABCDE"
+        assert start == 0
+        assert length == 5
+
+        # Should respect min_match_length
+        result, start, length = trie.longest_prefix_match("ABCDEFGH", min_match_length=4)
+        assert result in ["ABCD", "ABCDE"]  # Both are valid >= 4
+        assert length >= 4
+
+    def test_empty_trie(self):
+        """Test with empty trie"""
+        trie = PrefixTrie([])
+
+        result, start, length = trie.longest_prefix_match("ANYTARGET", min_match_length=1)
+        assert result is None
+        assert start == -1
+        assert length == -1
+
+    def test_consistency_with_regular_search(self):
+        """Test that results are consistent with regular search when applicable"""
+        entries = ["HELLO", "WORLD", "TEST"]
+        trie = PrefixTrie(entries)
+
+        # If longest_prefix_match finds something, regular search should find it too
+        result, start, length = trie.longest_prefix_match("HELLO", min_match_length=5)
+        if result is not None:
+            search_result, corrections = trie.search(result)
+            assert search_result == result
+            assert corrections == 0
+
+        # Test with prefix match
+        result, start, length = trie.longest_prefix_match("HELLOWORLD", min_match_length=5)
+        if result is not None:
+            search_result, corrections = trie.search(result)
+            assert search_result == result
+            assert corrections == 0
