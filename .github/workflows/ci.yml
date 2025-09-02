@@ -13,6 +13,13 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.x']
         simd: [AVX2, SSE2, NONE]
+        include:
+          - os: ubuntu-latest
+            pip-cache-path: ~/.cache/pip
+          - os: macos-latest
+            pip-cache-path: ~/Library/Caches/pip
+          - os: windows-latest
+            pip-cache-path: ~\AppData\Local\pip\Cache
         exclude:
           - os: windows-latest
             simd: NONE
@@ -29,6 +36,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.pip-cache-path }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-pip-
       - name: Set compiler flags
         env:
           OPT_FLAGS_LINUX: -O3

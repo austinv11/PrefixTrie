@@ -62,7 +62,7 @@ version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
 write_to = "src/prefixtrie/_version.py"
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "matplotlib>=3.10.6",
     "numpy>=2.2.6",
