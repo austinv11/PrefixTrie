@@ -95,11 +95,8 @@ jobs:
         with:
           arch: aarch64
           distro: ubuntu22.04
-          env:
-            # Set compiler flags for the ARM build.
-            # -std=c++11 is required by the project.
-            # -O3 is for optimization. NEON is enabled by default on aarch64.
-            CXXFLAGS: -O3 -std=c++11
+          env: |
+            CXXFLAGS=-O3 -std=c++11
           run: |
             echo "Running on $(uname -m)"
             python -m pip install --upgrade pip
