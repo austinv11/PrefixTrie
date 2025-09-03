@@ -7,6 +7,8 @@ permissions:
   contents: write
 jobs:
   deploy:
+    # Skip if commit message contains skip keywords (supports comma-separated values and 'all')
+    if: "!contains(github.event.head_commit.message, '[skip docs]') && !contains(github.event.head_commit.message, '[docs skip]') && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip all]') && !contains(github.event.head_commit.message, '[skip docs,') && !contains(github.event.head_commit.message, ',docs]') && !contains(github.event.head_commit.message, ',docs,') && !contains(github.event.head_commit.message, '[docs,') && !contains(github.event.head_commit.message, '[skip ci,') && !contains(github.event.head_commit.message, ',ci]') && !contains(github.event.head_commit.message, ',ci,') && !contains(github.event.head_commit.message, '[ci,')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

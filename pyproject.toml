@@ -1,7 +1,7 @@
 [project]
 name = "prefixtrie"
 dynamic = ["version"]
-description = "A cython implementation of a read-only prefix trie data structure."
+description = "A cython implementation of a prefix trie data structure for fast fuzzy matching."
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10"
 license = "MIT"

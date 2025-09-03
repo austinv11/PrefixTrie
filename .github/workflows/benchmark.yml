@@ -7,6 +7,8 @@ on:
 
 jobs:
   benchmark:
+    # Skip if commit message contains skip keywords (supports comma-separated values and 'all')
+    if: "!contains(github.event.head_commit.message, '[skip benchmarks]') && !contains(github.event.head_commit.message, '[skip bench]') && !contains(github.event.head_commit.message, '[skip all]') && !contains(github.event.head_commit.message, '[skip benchmarks,') && !contains(github.event.head_commit.message, ',benchmarks]') && !contains(github.event.head_commit.message, ',benchmarks,') && !contains(github.event.head_commit.message, '[benchmarks,') && !contains(github.event.head_commit.message, '[skip bench,') && !contains(github.event.head_commit.message, ',bench]') && !contains(github.event.head_commit.message, ',bench,') && !contains(github.event.head_commit.message, '[bench,')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
