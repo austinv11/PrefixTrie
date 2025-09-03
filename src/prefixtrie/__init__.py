@@ -215,15 +215,16 @@ class PrefixTrie:
         """
         return self._trie.search_substring(target_string, correction_budget)
 
-    def longest_prefix_match(self, target: str, min_match_length: int) -> tuple[str | None, int, int]:
+    def longest_prefix_match(self, target: str, min_match_length: int, correction_budget: int = 0) -> tuple[str | None, int, int]:
         """
         Find the longest prefix match in the trie for the given target string.
 
         :param target: The target string to find the longest prefix match for.
         :param min_match_length: Minimum length of the match to be considered valid.
+        :param correction_budget: Maximum number of corrections allowed (default is 0 for exact matching).
         :return: A tuple containing the longest matching prefix, the target start index, and the match length.
         """
-        return self._trie.longest_prefix_match(target, min_match_length)
+        return self._trie.longest_prefix_match(target, min_match_length, correction_budget)
 
     def search_count(self, query: str, correction_budget: int = 0) -> int:
         """

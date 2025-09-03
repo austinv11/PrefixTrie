@@ -497,6 +497,98 @@ class TestPrefixTrieDNASequences:
         assert result == "ATCG" * 250
         assert corrections == 1
 
+
+class TestPrefixTrieFuzzyLongestPrefixMatch:
+    """Test the fuzzy longest_prefix_match functionality."""
+
+    def test_fuzzy_match_with_substitution(self):
+        """Test finding a prefix with one substitution."""
+        entries = ["apple", "application"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # 'axple' should match 'apple' with 1 correction
+        result, start, length = trie.longest_prefix_match("zzaxplezzz", min_match_length=4, correction_budget=1)
+        assert result == "apple"
+        assert start == 2
+        assert length == 5
+
+    def test_fuzzy_match_with_indel(self):
+        """Test finding a prefix with one indel."""
+        entries = ["apple", "apply"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # 'aple' (deletion) should match 'apple'
+        # The returned length is the length of the matched substring in the target ("aple" -> 4).
+        result, start, length = trie.longest_prefix_match("zzaplezzz", min_match_length=4, correction_budget=1)
+        assert result == "apple"
+        assert start == 2
+        assert length == 4  # The match is on "aple"
+
+        # 'appple' (insertion) should match 'apple'
+        # The returned length is the length of the matched substring in the target ("appple" -> 6).
+        result, start, length = trie.longest_prefix_match("zzappplezzz", min_match_length=4, correction_budget=1)
+        assert result == "apple"
+        assert start == 2
+        assert length == 6
+
+    def test_correction_budget_is_respected(self):
+        """Test that the correction budget prevents matching."""
+        entries = ["application"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # 'axplication' needs 1 correction
+        result, start, length = trie.longest_prefix_match("zzaxplicationzz", min_match_length=8, correction_budget=0)
+        assert result is None
+
+        # With budget, it should be found
+        result, start, length = trie.longest_prefix_match("zzaxplicationzz", min_match_length=8, correction_budget=1)
+        assert result == "application"
+        assert start == 2
+        assert length == 11
+
+    def test_chooses_longest_match(self):
+        """Test that the longest match is chosen among fuzzy options."""
+        entries = ["short", "shortest", "shortbread"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # 'shortx' is 1 away from 'short'
+        # 'shortes' is 1 away from 'shortest'
+        # 'shortbrea' is 1 away from 'shortbread'
+        # Should find 'shortbread' as it's the longest
+        result, start, length = trie.longest_prefix_match("zzshortbreazzz", min_match_length=5, correction_budget=1)
+        assert result == "shortbread"
+        assert start == 2
+        assert length == 10
+
+    def test_no_match_found(self):
+        """Test case where no fuzzy match is possible."""
+        entries = ["hello", "world"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        result, start, length = trie.longest_prefix_match("zzxyzabcdezz", min_match_length=4, correction_budget=1)
+        assert result is None
+
+    def test_fallback_to_exact_match_behavior(self):
+        """Test that correction_budget=0 provides the exact match behavior."""
+        entries = ["testing", "tester"]
+        trie = PrefixTrie(entries)
+
+        # Calling with correction_budget=0 should find the exact prefix.
+        result, start, length = trie.longest_prefix_match("xxxtesterxxx", min_match_length=6, correction_budget=0)
+
+        assert result == "tester"
+        assert start == 3
+        assert length == 6
+
+        # A fuzzy query should not match with budget=0.
+        result, start, length = trie.longest_prefix_match("xxxtestorxxx", min_match_length=6, correction_budget=0)
+        assert result is None
+
+    def test_first_letter_correction(self):
+        """Test that matches are found even if the first letter is wrong."""
+        entries = ["important", "word"]
+        trie = PrefixTrie(entries, allow_indels=True)
+        # 'xmportant' should match 'important'
+        result, start, length = trie.longest_prefix_match("zzxmportantzz", min_match_length=8, correction_budget=1)
+        assert result == "important"
+        assert start == 2
+        assert length == 9
+
     def test_dna_performance_benchmark(self):
         """Performance test with many DNA sequences"""
         # Generate a large set of unique sequences
@@ -1347,6 +1439,7 @@ if __name__ == "__main__":
     assert result == "hello" and corrections == 1
 
     print("Smoke test passed! Run 'pytest test.py' for full test suite.")
+
 
 class TestPrefixTrieLongestPrefixMatch:
     """Test longest_prefix_match functionality of PrefixTrie"""

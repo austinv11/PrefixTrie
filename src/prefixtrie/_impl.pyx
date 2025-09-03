@@ -155,6 +155,24 @@ cdef inline bint _is_better_substring(const SubstringSearchResult* a, const Subs
         return a.corrections < b.corrections
     # Return true if the new result has a longer length
     return (a.end_pos - a.start_pos) > (b.end_pos - b.start_pos)
+
+cdef inline bint _is_better_prefix_match(const SubstringSearchResult* a, const SubstringSearchResult* b) noexcept nogil:
+    # a is the new result, b is the current best
+    if not a.found:
+        return False
+    if not b.found:
+        return True
+
+    cdef size_t a_len = a.end_pos - a.start_pos
+    cdef size_t b_len = b.end_pos - b.start_pos
+
+    if a_len > b_len:
+        return True
+    if a_len < b_len:
+        return False
+
+    # If lengths are equal, fewer corrections is better
+    return a.corrections < b.corrections
 # -----------------------------
 # Pure C++ cache (opaque to Python)
 # -----------------------------
@@ -674,37 +692,42 @@ cdef class cPrefixTrie:
         else:
             return None, -1, -1, -1
 
-    cpdef tuple[str, int, int] longest_prefix_match(self, str target_string, int min_match_length=1):
+    cpdef tuple[str, int, int] longest_prefix_match(self, str target_string, int min_match_length=1, int correction_budget=0):
         """
-        Scan the target string for the longest prefix substring present in the trie.
-        Note that this is an exact match search and does not require a complete match.
-        However, if there is an incomplete match and it is ambiguous what the next character is,
-        the search will return no match.
-
-        Example: Given a trie with "app" and "apple", searching "xyzappl" will return "apple" as the longest prefix match,
-        searching "xyzapp" will return "app", but searching "xyzap" will return no match since it is ambiguous.
+        Scan the target string for the longest prefix substring present in the trie,
+        allowing for a correction budget.
 
         :param target_string: The string to search within.
         :param min_match_length: Minimum length of the match to be considered valid.
+        :param correction_budget: Maximum number of corrections allowed.
         :return: Tuple of (found_string, target_start_pos, match_len) or (None, -1, -1) if no match is found.
         """
         cdef Str c_target = py_str_to_c_str(target_string)
         cdef str found_str_py = None
         cdef size_t target_len = simd_strlen(c_target)
         cdef size_t min_match_len_c = <size_t> min_match_length
-        if target_len < min_match_len_c:  # Only check if target is too short for min_match_length
-            free(c_target)
-            return None, -1, -1
         cdef SubstringSearchResult best_result
 
+        # Early exit if target is too short for the minimum required match length
+        if target_len + correction_budget < min_match_len_c:
+            free(c_target)
+            return None, -1, -1
+
         with nogil:
-            best_result = self._longest_prefix_search(c_target, target_len, min_match_len_c)
+            if correction_budget == 0:
+                best_result = self._longest_prefix_search(c_target, target_len, min_match_len_c)
+            else:
+                best_result = self._longest_prefix_search_fuzzy(c_target, target_len, min_match_len_c, correction_budget)
 
         free(c_target)
+
         # Convert result to Python types
         if best_result.found:
             found_str_py = c_str_to_py_str(best_result.found_str)
-            free(best_result.found_str)
+            # For fuzzy search, the found_str is a pointer to the leaf_value, so we don't free it.
+            # For exact search, it's a malloc'd copy, so we must free it.
+            if correction_budget == 0 and best_result.found_str != NULL:
+                 free(best_result.found_str)
             return found_str_py, best_result.start_pos, best_result.end_pos - best_result.start_pos
         else:
             return None, -1, -1
@@ -943,6 +966,11 @@ cdef class cPrefixTrie:
         cdef SubstringSearchResult current_result
         cdef size_t start_pos
         cdef CacheState * st
+        cdef size_t i
+        cdef char* root_children_chars
+        cdef const char* p
+        cdef const char* end
+        cdef size_t num_root_children
 
         best_result.found = False
         best_result.found_str = NULL
@@ -1139,6 +1167,136 @@ cdef class cPrefixTrie:
 
         free(root_children_chars)
         return best_result
+
+    cdef SubstringSearchResult _longest_prefix_search_fuzzy(self, Str target, size_t target_len,
+                                                            size_t min_match_len, int correction_budget) noexcept nogil:
+        cdef SubstringSearchResult best_result
+        cdef size_t start_pos
+        cdef CacheState* st
+        cdef size_t i
+        cdef char* root_children_chars
+        cdef const char* p
+        cdef const char* end
+
+        best_result.found = False
+        best_result.found_str = NULL
+        best_result.corrections = correction_budget + 1
+        best_result.start_pos = 0
+        best_result.end_pos = 0
+
+        # Optimization: assume first character is correct
+        num_root_children = n_children(self.root)
+        if num_root_children > 0:
+            root_children_chars = <char*> malloc(num_root_children * sizeof(char))
+            if root_children_chars:
+                for i in range(num_root_children):
+                    root_children_chars[i] = child_at(self.root, i).value
+
+                p = target
+                end = target + target_len
+                while p < end:
+                    p = simd_strchr_any(p, end - p, root_children_chars, num_root_children)
+                    if p == NULL: break
+                    start_pos = p - target
+                    st = cache_new()
+                    self._longest_prefix_search_fuzzy_recursive(st, self.root, target, target_len, start_pos, start_pos, 0, correction_budget, &best_result, min_match_len)
+                    cache_free(st)
+                    p += 1
+                free(root_children_chars)
+
+        # Fallback to full fuzzy search if no exact first char match yielded a good result
+        # or to find potentially better matches by correcting the first character.
+        for start_pos in range(target_len):
+            # Pruning: if remaining target length is smaller than best match, stop.
+            if target_len - start_pos < (best_result.end_pos - best_result.start_pos):
+                break
+            st = cache_new()
+            self._longest_prefix_search_fuzzy_recursive(st, self.root, target, target_len, start_pos, start_pos, 0, correction_budget, &best_result, min_match_len)
+            cache_free(st)
+
+        return best_result
+
+    cdef void _longest_prefix_search_fuzzy_recursive(self,
+                                                     CacheState* st,
+                                                     TrieNode* node,
+                                                     Str target,
+                                                     size_t target_len,
+                                                     size_t start_pos,
+                                                     size_t curr_idx,
+                                                     int curr_corrections,
+                                                     int max_corrections,
+                                                     SubstringSearchResult* best_result,
+                                                     size_t min_match_len) noexcept nogil:
+        cdef Key node_key
+        cdef SearchResult prev
+        cdef SubstringSearchResult potential_result
+        cdef size_t i, m
+        cdef int ai, idx_child
+        cdef TrieNode* child_node
+        cdef char query_char
+        cdef SearchResult res_to_cache
+        cdef bint exact_only = (curr_corrections >= max_corrections)
+
+        node_key = make_key(node.node_id, curr_idx - start_pos, True)
+        if cache_try_get(st, node_key, &prev):
+            if prev.corrections <= curr_corrections:
+                return
+
+        if has_complete(node):
+            potential_result.found = True
+            potential_result.found_str = node.leaf_value
+            potential_result.corrections = curr_corrections
+            potential_result.start_pos = start_pos
+            potential_result.end_pos = curr_idx
+            if (potential_result.end_pos - potential_result.start_pos) >= min_match_len:
+                if _is_better_prefix_match(&potential_result, best_result):
+                    best_result[0] = potential_result
+
+        if curr_idx >= target_len:
+            res_to_cache.found = False; res_to_cache.corrections = curr_corrections; res_to_cache.found_str = NULL
+            cache_store_if_better(st, node_key, res_to_cache)
+            return
+
+        # --- Recursive Steps ---
+        # 1. Exact Match
+        query_char = target[curr_idx]
+        ai = self.alphabet.map[<unsigned char> query_char]
+        if ai >= 0 and node.children[ai] is not NULL:
+            self._longest_prefix_search_fuzzy_recursive(st, node.children[ai], target, target_len, start_pos,
+                                                        curr_idx + 1, curr_corrections, max_corrections,
+                                                        best_result, min_match_len)
+
+        if exact_only:
+            res_to_cache.found = False; res_to_cache.corrections = curr_corrections; res_to_cache.found_str = NULL
+            cache_store_if_better(st, node_key, res_to_cache)
+            return
+
+        # 2. Substitution
+        m = n_children(node)
+        for i in range(m):
+            idx_child = <int> deref(node.children_idx)[i]
+            if idx_child == ai:
+                continue
+            child_node = node.children[idx_child]
+            self._longest_prefix_search_fuzzy_recursive(st, child_node, target, target_len, start_pos,
+                                                        curr_idx + 1, curr_corrections + 1, max_corrections,
+                                                        best_result, min_match_len)
+
+        if self.allow_indels:
+            # 3. Deletion (from target)
+            self._longest_prefix_search_fuzzy_recursive(st, node, target, target_len, start_pos,
+                                                        curr_idx + 1, curr_corrections + 1, max_corrections,
+                                                        best_result, min_match_len)
+
+            # 4. Insertion (into target)
+            for i in range(m):
+                child_node = child_at(node, i)
+                self._longest_prefix_search_fuzzy_recursive(st, child_node, target, target_len, start_pos,
+                                                            curr_idx, curr_corrections + 1, max_corrections,
+                                                            best_result, min_match_len)
+
+        res_to_cache.found = False; res_to_cache.corrections = curr_corrections; res_to_cache.found_str = NULL
+        cache_store_if_better(st, node_key, res_to_cache)
 
     cdef void _search_count_recursive(self,
                                       CountCacheState * st,
