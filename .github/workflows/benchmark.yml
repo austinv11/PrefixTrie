@@ -38,4 +38,4 @@ jobs:
           git config --local user.name "GitHub Action"
           git add benchmark_search.png benchmark_substring_search.png
           git commit -m "Automated update to benchmark plots [skip all]" || echo "No changes to commit"
-          git push || echo "No changes to push"
+          git push origin HEAD:master || echo "No changes to push"
